@@ -1,0 +1,7 @@
+*.md
+*.log
+verify_*
+test*
+logs/
+.pids/
+hdb/
