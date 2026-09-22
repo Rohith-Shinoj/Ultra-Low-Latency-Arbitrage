@@ -407,6 +407,11 @@ def cmd_monitor():
     except KeyboardInterrupt:
         print(f"\n{YELLOW}Stopped live streaming monitor.{RESET}")
 
+def cmd_tui():
+    """Launches full-scale Bloomberg terminal TUI dual-pane interface."""
+    import bloomberg_tui
+    bloomberg_tui.run_tui()
+
 def main():
     parser = argparse.ArgumentParser(description="Central Gateway & Arbitrage Infrastructure Controller")
     subparsers = parser.add_subparsers(dest="action", help="Action to perform")
@@ -424,6 +429,7 @@ def main():
     subparsers.add_parser("query", help="Show live KDB+ table counts and cross-exchange prices")
     subparsers.add_parser("benchmark", help="Display cycle-accurate latency benchmarks from C++ engine")
     subparsers.add_parser("monitor", help="Continuously stream live cross-venue arbitrage matrix")
+    subparsers.add_parser("tui", help="Launch full-scale Bloomberg-style dual-pane TUI monitor")
 
     args = parser.parse_args()
 
@@ -441,6 +447,8 @@ def main():
         cmd_benchmark()
     elif args.action == "monitor":
         cmd_monitor()
+    elif args.action == "tui":
+        cmd_tui()
     else:
         cmd_status()
 
