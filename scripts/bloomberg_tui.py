@@ -6,6 +6,7 @@ Phase 4: Real-Time Options Greeks & Volatility Microstructure Matrix.
 
 import sys
 import os
+import re
 import json
 import time
 from pathlib import Path
@@ -86,6 +87,35 @@ def load_parity():
                 pass
     return parity
 
+def parse_latency_benchmark():
+    """Parses live genuine hardware cycle latency percentiles from logs/latency_benchmark.txt."""
+    p = ROOT_DIR / "logs" / "latency_benchmark.txt"
+    if not p.exists():
+        return None
+    try:
+        content = p.read_text()
+        freq_m = re.search(r'Hardware Timer Freq:\s*([0-9\.]+)\s*MHz.*?Total Processed Samples:\s*(\d+)', content)
+        freq = float(freq_m.group(1)) if freq_m else 25.0
+        samples = int(freq_m.group(2)) if freq_m else 0
+
+        pattern = r'^([0-9]\.\s+[A-Za-z0-9\-\s]+?|END-TO-END\s*\([A-Za-z0-9]+\))\s+([0-9\.]+)\s+([0-9\.]+)\s+([0-9\.]+)\s+([0-9\.]+)\s+([0-9\.]+)\s+([0-9\.]+)\s+([0-9\.]+)'
+        stages = {}
+        for line in content.splitlines():
+            m = re.match(pattern, line.strip())
+            if m:
+                stages[m.group(1).strip()] = {
+                    'min': float(m.group(2)),
+                    'p50': float(m.group(3)),
+                    'p90': float(m.group(4)),
+                    'p99': float(m.group(5)),
+                    'p999': float(m.group(6)),
+                    'max': float(m.group(7)),
+                    'mean': float(m.group(8))
+                }
+        return {'freq': freq, 'samples': samples, 'stages': stages}
+    except Exception:
+        return None
+
 class TickHistory:
     def __init__(self, maxlen=50):
         self.btc_deribit_bid = deque(maxlen=maxlen)
@@ -163,11 +193,12 @@ def fetch_live_quotes():
     return quotes
 
 def make_layout() -> Layout:
-    """Defines the dual-pane Bloomberg-style screen geometry."""
+    """Defines the dual-pane Bloomberg-style screen geometry with hardware latency dock."""
     layout = Layout(name="root")
     layout.split(
         Layout(name="header", size=3),
         Layout(name="main", ratio=1),
+        Layout(name="latency_dock", size=10),
         Layout(name="footer", size=3),
     )
     layout["main"].split_row(
@@ -486,6 +517,80 @@ def render_equity_panel(data: dict, greeks: dict, parity: dict) -> Panel:
 
     return Panel(content, title="[bold magenta]US EQUITY OPTIONS NBBO BOOK[/bold magenta]", border_style="magenta")
 
+def render_latency_dock(bench: dict) -> Panel:
+    if not bench or not bench.get('stages'):
+        empty_text = Text("Awaiting hardware latency benchmark telemetry from engine (logs/latency_benchmark.txt)...", style="dim")
+        return Panel(empty_text, title="[bold yellow]INSTITUTIONAL HARDWARE CYCLE LATENCY PROFILER (ARM64 cntvct_el0 @ 25.00 MHz)[/bold yellow]", border_style="yellow")
+
+    stages = bench['stages']
+    e2e = stages.get('END-TO-END (T2T)', {})
+    e2e_p99 = e2e.get('p99', 5600.0)
+
+    summary_grid = Table.grid(expand=True)
+    summary_grid.add_column(justify="left", ratio=1)
+    summary_grid.add_column(justify="right", ratio=1)
+
+    left_sum = Text.assemble(
+        ("TIMER: ", "dim"), (f"ARM64 cntvct_el0 @ {bench['freq']:.2f} MHz (40.0 ns/tick)  ", "bold cyan"),
+        ("SAMPLES: ", "dim"), (f"{bench['samples']:,} pkts  ", "bold green"),
+        ("AFFINITY: ", "dim"), ("Core 2 (Pinned Hot-Spin)", "bold magenta"),
+    )
+    right_sum = Text.assemble(
+        ("T2T P50: ", "dim"), (f"{e2e.get('p50', 0):,.1f} ns  ", "bold green"),
+        ("P90: ", "dim"), (f"{e2e.get('p90', 0):,.1f} ns  ", "bold cyan"),
+        ("P99: ", "dim"), (f"{e2e.get('p99', 0):,.1f} ns  ", "bold yellow"),
+        ("P99.9: ", "dim"), (f"{e2e.get('p999', 0)/1000.0:.1f} µs  ", "bold red"),
+        ("MEAN: ", "dim"), (f"{e2e.get('mean', 0):,.1f} ns", "bold white"),
+    )
+    summary_grid.add_row(left_sum, right_sum)
+
+    t = Table(expand=True, box=None, padding=(0, 1))
+    t.add_column("PIPELINE STAGE", style="bold white", no_wrap=True)
+    t.add_column("MIN (ns)", justify="right", style="dim")
+    t.add_column("P50 (ns)", justify="right", style="bold green")
+    t.add_column("P90 (ns)", justify="right", style="bold cyan")
+    t.add_column("P99 (ns)", justify="right", style="bold yellow")
+    t.add_column("P99.9 (ns)", justify="right", style="bold red")
+    t.add_column("MEAN (ns)", justify="right", style="white")
+    t.add_column("LATENCY DISTRIBUTION PROFILE (P99 BUDGET)", justify="left")
+
+    display_names = [
+        ("1. Packet Ingress", "1. Kernel-Bypass Ingress (AF_XDP RX)", "cyan"),
+        ("2. Zero-Copy Parse", "2. Zero-Copy SBE/ITCH Parsing", "green"),
+        ("3. L2 Book Update", "3. Lock-Free L2 BBO Order Book", "magenta"),
+        ("4. Arb Strategy", "4. Cross-Venue Arb Engine Eval", "yellow"),
+        ("END-TO-END (T2T)", "TOTAL TICK-TO-TRADE (T2T DECISION)", "bold white"),
+    ]
+
+    for key, label, color in display_names:
+        row = stages.get(key)
+        if not row:
+            continue
+        p99_val = row['p99']
+        pct = min(1.0, max(0.01, p99_val / e2e_p99)) if e2e_p99 > 0 else 0
+        bar_len = int(round(pct * 22))
+        bar_str = "█" * bar_len + "░" * (22 - bar_len)
+        bar_display = f"[{color}]{bar_str}[/{color}] {pct*100.0:>5.1f}%"
+
+        t.add_row(
+            f"[{color}]{label}[/{color}]",
+            f"{row['min']:.1f}",
+            f"{row['p50']:.1f}",
+            f"{row['p90']:.1f}",
+            f"{row['p99']:.1f}",
+            f"{row['p999']:.1f}",
+            f"{row['mean']:.1f}",
+            bar_display
+        )
+
+    content = Table.grid(expand=True)
+    content.add_column()
+    content.add_row(summary_grid)
+    content.add_row(Text("─" * 120, style="dim"))
+    content.add_row(t)
+
+    return Panel(content, title="[bold yellow]INSTITUTIONAL HARDWARE CYCLE LATENCY PROFILER (ARM64 cntvct_el0 @ 25.00 MHz)[/bold yellow]", border_style="yellow")
+
 def render_footer() -> Panel:
     grid = Table.grid(expand=True)
     grid.add_column(justify="left", ratio=1)
@@ -498,7 +603,7 @@ def render_footer() -> Panel:
         ("ENGINE: ", "dim"),
         ("LIVE ARB EVALUATION ACTIVE", "bold green"),
     )
-    right = Text("BLOOMBERG TERMINAL MODE [OMON] | PHASE 5 PARITY & FEE ARB", style="bold yellow")
+    right = Text("BLOOMBERG TERMINAL MODE [OMON] | PHASE 6 HARDWARE LATENCY PROFILER", style="bold yellow")
     grid.add_row(left, right)
     return Panel(grid, style="on black", border_style="dim")
 
@@ -512,9 +617,11 @@ def run_tui():
                 data = fetch_live_quotes()
                 greeks = load_greeks()
                 parity = load_parity()
+                latency_data = parse_latency_benchmark()
                 layout["header"].update(render_header(data['total_ticks']))
                 layout["crypto_panel"].update(render_crypto_panel(data, greeks, parity))
                 layout["equity_panel"].update(render_equity_panel(data, greeks, parity))
+                layout["latency_dock"].update(render_latency_dock(latency_data))
                 layout["footer"].update(render_footer())
                 time.sleep(0.5)
         except KeyboardInterrupt:
