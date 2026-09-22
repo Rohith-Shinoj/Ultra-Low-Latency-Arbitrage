@@ -3,7 +3,7 @@
 # Requires root privileges for kernel-bypass AF_XDP, core isolation, and raw sockets.
 
 if [ "$EUID" -ne 0 ]; then
-    echo "Error: ./start.sh requires root privileges for kernel AF_XDP and raw socket access." >&2
+    echo "Error: ./start.sh requires root privileges for kernel AF_XDP and core pinning." >&2
     echo "Please run: sudo ./start.sh $@" >&2
     exit 1
 fi

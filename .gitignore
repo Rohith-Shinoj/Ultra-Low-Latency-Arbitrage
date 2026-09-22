@@ -1,4 +1,6 @@
 *.md
+!README.md
+!**/README.md
 *.log
 verify_*
 test*

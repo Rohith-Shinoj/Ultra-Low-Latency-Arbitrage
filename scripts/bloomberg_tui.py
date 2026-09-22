@@ -741,7 +741,7 @@ def render_header(total_ticks: int) -> Panel:
     grid.add_column(justify="center", ratio=2)
     grid.add_column(justify="right", ratio=1)
 
-    title = Text("OMON <GO>  |  CROSS-VENUE ARBITRAGE & QUANT MONITOR", style="bold #e5a93b")
+    title = Text("CROSS-VENUE ARBITRAGE MONITOR", style="bold #e5a93b")
     mid_info = Text.assemble(
         ("INGRESS: ", "#64748b"), ("AF_XDP (Kernel Bypass)  ", "bold #4ade80"),
         ("CPU: ", "#64748b"), ("Core 2 (Pinned)  ", "#38bdf8"),
