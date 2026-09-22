@@ -385,12 +385,12 @@ def main():
     if should_restart:
         import subprocess
         console.print("[bold yellow]Restarting market gateways...[/bold yellow]")
-        subprocess.run([str(ROOT_DIR / "control.sh"), "restart", "deribit"])
-        subprocess.run([str(ROOT_DIR / "control.sh"), "restart", "okx"])
-        subprocess.run([str(ROOT_DIR / "control.sh"), "restart", "binance_opt"])
-        subprocess.run([str(ROOT_DIR / "control.sh"), "restart", "cboe"])
-        subprocess.run([str(ROOT_DIR / "control.sh"), "restart", "nasdaq"])
-        subprocess.run([str(ROOT_DIR / "control.sh"), "restart", "opra"])
+        subprocess.run([str(ROOT_DIR / "start.sh"), "--restart", "deribit"])
+        subprocess.run([str(ROOT_DIR / "start.sh"), "--restart", "okx"])
+        subprocess.run([str(ROOT_DIR / "start.sh"), "--restart", "binance_opt"])
+        subprocess.run([str(ROOT_DIR / "start.sh"), "--restart", "cboe"])
+        subprocess.run([str(ROOT_DIR / "start.sh"), "--restart", "nasdaq"])
+        subprocess.run([str(ROOT_DIR / "start.sh"), "--restart", "opra"])
         console.print("[bold green]✔ All gateways updated and streaming new contract targets live![/bold green]")
 
 if __name__ == '__main__':

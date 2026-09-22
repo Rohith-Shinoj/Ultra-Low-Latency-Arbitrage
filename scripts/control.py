@@ -11,6 +11,18 @@ import signal
 import subprocess
 import argparse
 from pathlib import Path
+import glob
+
+# Ensure user site-packages are accessible when invoked via sudo
+if "SUDO_USER" in os.environ:
+    try:
+        import pwd
+        u_home = pwd.getpwnam(os.environ["SUDO_USER"]).pw_dir
+        for p in glob.glob(f"{u_home}/.local/lib/python*/site-packages"):
+            if p not in sys.path:
+                sys.path.insert(0, p)
+    except Exception:
+        pass
 
 # Paths
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -378,6 +390,53 @@ def cmd_query():
     except Exception as e:
         print(f"{RED}Could not query KDB+ on port 5020:{RESET} {e}")
 
+HELP_TEXT = f"""{BOLD}NAME{RESET}
+    start.sh - Ultra-Low-Latency Arbitrage Infrastructure & Trading Terminal
+
+{BOLD}SYNOPSIS{RESET}
+    {BOLD}sudo ./start.sh{RESET} [{CYAN}OPTION{RESET}] [{YELLOW}TARGETS...{RESET}]
+
+{BOLD}DESCRIPTION{RESET}
+    Central control interface and Bloomberg-style institutional trading terminal
+    for the ultra-low-latency cross-venue equity & crypto options arbitrage system.
+
+    Running {BOLD}sudo ./start.sh{RESET} with no options launches the interactive Bloomberg TUI.
+
+{BOLD}OPTIONS{RESET}
+    {CYAN}--tui{RESET}                  Launch full-scale Bloomberg-style dual-pane TUI monitor (default)
+    {CYAN}--select{RESET}               Launch interactive options contract discovery & selector in TUI
+    {CYAN}--no-select{RESET}            Launch TUI directly into trading books (skipping contract selector)
+    {CYAN}--status{RESET}               Show live status, PIDs, and health dashboard of all components
+    {CYAN}--start{RESET} [{YELLOW}TARGET...{RESET}]    Start components (default: all)
+    {CYAN}--stop{RESET} [{YELLOW}TARGET...{RESET}]     Stop components (default: all)
+    {CYAN}--restart{RESET} [{YELLOW}TARGET...{RESET}]  Restart components (default: all)
+    {CYAN}--query{RESET}                Query live KDB+ tick counts, cross-exchange prices & Greeks
+    {CYAN}--benchmark{RESET}            Display cycle-accurate hardware latency benchmarks (TSC/rdtsc)
+    {CYAN}--monitor{RESET}              Continuously stream real-time cross-venue arbitrage matrix
+    {CYAN}-h, --help{RESET}             Display this help manual and exit
+
+{BOLD}COMPONENTS{RESET}
+    {YELLOW}all{RESET}                 All services (tickerplant, subscriber, engine, gateways)
+    {YELLOW}gateways{RESET}            All 6 exchange gateways (cboe, nasdaq, opra, deribit, okx, binance_opt)
+    {YELLOW}tickerplant{RESET}         KDB+ tick database & feed handler (port 5020)
+    {YELLOW}subscriber{RESET}          Multicast receiver & KDB+ ingest daemon
+    {YELLOW}engine{RESET}              C++20 lock-free arbitrage execution engine
+    {YELLOW}cboe{RESET}                CBOE S&P 500 options binary market data gateway (UDP 5000)
+    {YELLOW}nasdaq{RESET}              NASDAQ ITCH options binary gateway (UDP 5001)
+    {YELLOW}opra{RESET}                OPRA national market system options gateway (UDP 5002)
+    {YELLOW}deribit{RESET}             Deribit crypto options gateway (UDP 5003)
+    {YELLOW}okx{RESET}                 OKX crypto options gateway (UDP 5004)
+    {YELLOW}binance_opt{RESET}         Binance crypto options gateway (UDP 5005)
+
+{BOLD}EXAMPLES{RESET}
+    sudo ./start.sh                  # Launch Bloomberg terminal TUI (default)
+    sudo ./start.sh --status         # Check health and PIDs of all components
+    sudo ./start.sh --restart all    # Restart entire pipeline
+    sudo ./start.sh --start gateways # Start all 6 options gateways
+    sudo ./start.sh --benchmark      # View nanosecond cycle-accurate engine benchmarks
+    sudo ./start.sh --query          # Query KDB+ cross-venue quote snapshots
+"""
+
 def cmd_benchmark():
     """Displays latest hardware latency benchmarks from the C++ engine."""
     engine_log = ROOT_DIR / "logs" / "engine.log"
@@ -391,7 +450,7 @@ def cmd_benchmark():
         if len(blocks) > 1:
             print(blocks[-1].strip())
     else:
-        print(f"{YELLOW}Engine is collecting cycles... run `control.sh start engine` and check again.{RESET}")
+        print(f"{YELLOW}Engine is collecting cycles... run `./start.sh --start engine` and check again.{RESET}")
 
 def cmd_monitor():
     """Continuously monitors cross-venue arbitrage matrix and streams updates in real time."""
@@ -421,49 +480,56 @@ def cmd_select(extra_args=None):
     bloomberg_tui.run_tui(start_in_select=True)
 
 def main():
-    parser = argparse.ArgumentParser(description="Central Gateway & Arbitrage Infrastructure Controller")
-    subparsers = parser.add_subparsers(dest="action", help="Action to perform")
+    args = sys.argv[1:]
 
-    p_start = subparsers.add_parser("start", help="Start components (all, gateways, or specific name)")
-    p_start.add_argument("targets", nargs="*", default=["all"])
+    # Default action: no arguments launches Bloomberg TUI directly
+    if not args:
+        cmd_tui()
+        return
 
-    p_stop = subparsers.add_parser("stop", help="Stop components (all, gateways, or specific name)")
-    p_stop.add_argument("targets", nargs="*", default=["all"])
+    first = args[0]
 
-    p_restart = subparsers.add_parser("restart", help="Restart components")
-    p_restart.add_argument("targets", nargs="*", default=["all"])
+    # Standard Help display
+    if first in ("-h", "--help", "help"):
+        print(HELP_TEXT)
+        return
 
-    subparsers.add_parser("status", help="Show dashboard status of all components")
-    subparsers.add_parser("query", help="Show live KDB+ table counts and cross-exchange prices")
-    subparsers.add_parser("benchmark", help="Display cycle-accurate latency benchmarks from C++ engine")
-    subparsers.add_parser("monitor", help="Continuously stream live cross-venue arbitrage matrix")
-    p_tui = subparsers.add_parser("tui", help="Launch full-scale Bloomberg-style dual-pane TUI monitor")
-    p_tui.add_argument("tui_args", nargs="*", default=[])
-    p_select = subparsers.add_parser("select", help="Interactive contract discovery & selector (Crypto & Equity)")
-    p_select.add_argument("select_args", nargs="*", default=[])
+    # Handle --start=target or --stop=target syntax
+    target_from_equals = []
+    if "=" in first:
+        opt_key, opt_val = first.split("=", 1)
+        first = opt_key
+        if opt_val:
+            target_from_equals = [opt_val]
 
-    args, unknown = parser.parse_known_args()
-
-    if args.action == "start":
-        cmd_start(args.targets)
-    elif args.action == "stop":
-        cmd_stop(args.targets)
-    elif args.action == "restart":
-        cmd_restart(args.targets)
-    elif args.action == "status":
+    # Command dispatch supporting both standard --flags and legacy commands
+    if first in ("--tui", "tui"):
+        cmd_tui(args[1:])
+    elif first == "--no-select":
+        cmd_tui(["--no-select"] + args[1:])
+    elif first in ("--select", "select"):
+        cmd_select(args[1:])
+    elif first in ("--status", "status"):
         cmd_status()
-    elif args.action == "query":
+    elif first in ("--start", "start"):
+        targets = target_from_equals or (args[1:] if len(args) > 1 else ["all"])
+        cmd_start(targets)
+    elif first in ("--stop", "stop"):
+        targets = target_from_equals or (args[1:] if len(args) > 1 else ["all"])
+        cmd_stop(targets)
+    elif first in ("--restart", "restart"):
+        targets = target_from_equals or (args[1:] if len(args) > 1 else ["all"])
+        cmd_restart(targets)
+    elif first in ("--query", "query"):
         cmd_query()
-    elif args.action == "benchmark":
+    elif first in ("--benchmark", "benchmark"):
         cmd_benchmark()
-    elif args.action == "monitor":
+    elif first in ("--monitor", "monitor"):
         cmd_monitor()
-    elif args.action == "tui":
-        cmd_tui(args.tui_args + unknown)
-    elif args.action == "select":
-        cmd_select(args.select_args + unknown)
     else:
-        cmd_status()
+        sys.stderr.write(f"./start.sh: unrecognized option '{first}'\nRun 'sudo ./start.sh --help' for available options.\n")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
+
