@@ -40,7 +40,7 @@ static bool pin_to_core(int core_id) {
     }
 }
 
-void print_cross_venue_summary(const MultiVenueOrderBook& ob, std::ostream& os = std::cout) {
+void print_cross_venue_summary(const MultiVenueOrderBook& ob, const std::string& ingress_mode = "", std::ostream& os = std::cout) {
     const auto& cboe = ob.get_book(VENUE_CBOE_OPT);
     const auto& nasdaq = ob.get_book(VENUE_NASDAQ_OPT);
     const auto& opra = ob.get_book(VENUE_OPRA_OPT);
@@ -51,6 +51,9 @@ void print_cross_venue_summary(const MultiVenueOrderBook& ob, std::ostream& os =
 
     os << "\n═══════════════════════════════════════════════════════════════════════════════════════\n";
     os << "                 CROSS-VENUE ARBITRAGE & BID-ASK SPREAD ENGINE MATRIX                  \n";
+    if (!ingress_mode.empty()) {
+        os << " Ingress Architecture: " << ingress_mode << "\n";
+    }
     os << "═══════════════════════════════════════════════════════════════════════════════════════\n";
 
     // 1. Three BTC Options Cross-Venue Spreads
@@ -252,14 +255,14 @@ int main(int argc, char* argv[]) {
         auto now = std::chrono::steady_clock::now();
         if (std::chrono::duration_cast<std::chrono::seconds>(now - last_stats_print).count() >= 10) {
             if (total_packets > 0) {
-                print_cross_venue_summary(order_book);
+                print_cross_venue_summary(order_book, ingress.get_mode());
                 tracker.print_report();
                 std::cout << " [Live Metrics] Ingested Packets: " << total_packets 
                           << " | Arb Opportunities Detected: " << total_arb_opportunities << "\n\n";
 
                 std::ofstream bf("logs/latency_benchmark.txt");
                 if (bf.is_open()) {
-                    print_cross_venue_summary(order_book, bf);
+                    print_cross_venue_summary(order_book, ingress.get_mode(), bf);
                     tracker.print_report(bf);
                     bf << "Total Packets Processed: " << total_packets << "\n";
                     bf << "Total Arb Opportunities: " << total_arb_opportunities << "\n";
@@ -271,13 +274,13 @@ int main(int argc, char* argv[]) {
     }
 
     std::cout << "\n[Engine] Shutting down gracefully. Generating final benchmark report...\n";
-    print_cross_venue_summary(order_book);
+    print_cross_venue_summary(order_book, ingress.get_mode());
     tracker.print_report();
 
     // Export latency benchmark to file for historical auditing
     std::ofstream bench_file("logs/latency_benchmark.txt");
     if (bench_file.is_open()) {
-        print_cross_venue_summary(order_book, bench_file);
+        print_cross_venue_summary(order_book, ingress.get_mode(), bench_file);
         tracker.print_report(bench_file);
         bench_file << "Total Packets Processed: " << total_packets << "\n";
         bench_file << "Total Arb Opportunities: " << total_arb_opportunities << "\n";

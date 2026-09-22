@@ -1,6 +1,6 @@
 CXX = g++
 CXXFLAGS = -std=c++20 -O3 -march=armv8-a+crc+crypto -Wall -Wextra -pthread -Iinclude -I/usr/include/xdp
-LDFLAGS = -lxdp -lbpf -lpthread
+LDFLAGS = -lxdp -lbpf -lpthread -ldl
 
 CLANG = clang
 BPF_CFLAGS = -O2 -target bpf -I/usr/include/aarch64-linux-gnu -I/usr/include
@@ -17,10 +17,10 @@ dirs:
 $(BIN_DIR)/xdp_prog.o: $(NET_DIR)/xdp_prog.c
 	$(CLANG) $(BPF_CFLAGS) -c $< -o $@
 
-$(BIN_DIR)/af_xdp_core.o: $(NET_DIR)/af_xdp_core.cpp include/af_xdp_core.h
+$(BIN_DIR)/af_xdp_core.o: $(NET_DIR)/af_xdp_core.cpp include/af_xdp_core.h include/solarflare_onload.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(BIN_DIR)/engine_main: $(SRC_DIR)/engine_main.cpp $(BIN_DIR)/af_xdp_core.o include/order_book.h include/arbitrage_strategy.h include/benchmark.h include/cme_sbe.h include/itch50.h
+$(BIN_DIR)/engine_main: $(SRC_DIR)/engine_main.cpp $(BIN_DIR)/af_xdp_core.o include/order_book.h include/arbitrage_strategy.h include/benchmark.h include/cme_sbe.h include/itch50.h include/solarflare_onload.h
 	$(CXX) $(CXXFLAGS) $(SRC_DIR)/engine_main.cpp $(BIN_DIR)/af_xdp_core.o $(LDFLAGS) -o $@
 
 clean:

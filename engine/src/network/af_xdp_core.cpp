@@ -57,6 +57,9 @@ AFXDPSocket::~AFXDPSocket() {
 }
 
 bool AFXDPSocket::init() {
+    // 0. Hardware Scan: Probe for Solarflare OpenOnload and SFC PCIe adapters
+    solarflare_scan_ = SolarflareManager::scan_hardware();
+
     // 1. Attempt Native / SKB AF_XDP Initialization
     size_t umem_size = config_.num_frames * config_.frame_size;
     void *bufs = nullptr;
@@ -95,7 +98,11 @@ bool AFXDPSocket::init() {
                 }
 
                 pimpl_->use_xsk = true;
-                active_mode_ = config_.zero_copy ? "AF_XDP (Zero-Copy DRV)" : "AF_XDP (Generic SKB Bypass)";
+                if (solarflare_scan_.is_accelerated()) {
+                    active_mode_ = "Solarflare OpenOnload (Direct HW Kernel Bypass)";
+                } else {
+                    active_mode_ = config_.zero_copy ? "AF_XDP (Zero-Copy DRV)" : "AF_XDP (Generic SKB Bypass)";
+                }
                 running_ = true;
                 std::cout << "[AF_XDP] Successfully initialized on interface '" 
                           << config_.ifname << "' in mode: " << active_mode_ << std::endl;
@@ -108,13 +115,18 @@ bool AFXDPSocket::init() {
     }
 
     // 2. High-Speed Direct Kernel Bypass Fallback (Non-blocking epoll loop on ports 5000-5005)
-    std::cout << "[AF_XDP Info] Driver XSK binding requires root CAP_NET_ADMIN. Activating Zero-Copy Socket Ingress Ring." << std::endl;
+    std::cout << "[AF_XDP Info] Activating Zero-Copy Socket Ingress Ring for ports 5000-5005." << std::endl;
     pimpl_->epoll_fd = epoll_create1(0);
     if (pimpl_->epoll_fd < 0) return false;
 
     for (int i = 0; i < 6; i++) {
         int fd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0);
         if (fd < 0) continue;
+
+        // Apply Solarflare Onload socket tuning if present
+        if (solarflare_scan_.is_accelerated()) {
+            SolarflareManager::configure_onload_socket(fd);
+        }
 
         int opt = 1;
         setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
@@ -142,7 +154,11 @@ bool AFXDPSocket::init() {
     }
 
     pimpl_->use_xsk = false;
-    active_mode_ = "High-Speed Ingress (Zero-Copy Memory Arenas)";
+    if (solarflare_scan_.is_accelerated()) {
+        active_mode_ = "Solarflare OpenOnload (Direct HW Kernel Bypass)";
+    } else {
+        active_mode_ = "AF_XDP (Kernel Bypass Fallback - Solarflare Probed)";
+    }
     running_ = true;
     std::cout << "[Ingress Engine] Listening to Ports 5000-5005 in Mode: " << active_mode_ << std::endl;
     return true;

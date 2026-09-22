@@ -41,7 +41,7 @@ An institutional-grade, ultra-low-latency arbitrage pipeline and Bloomberg-style
 - **Zero-Copy & Lock-Free Design**: In-place pointer-cast packet parsing with 64-byte cacheline-aligned (`alignas(64)`) lock-free L2 BBO order books.
 - **Core Pinning & Latency Profiling**: Thread isolated and pinned to CPU Core 2; hardware cycle timers (`rdtsc` / `cntvct_el0`) capture nanosecond stage-by-stage percentiles (P50, P90, P99, P99.9).
 
-### 3. KDB+ Streaming Pipeline (`kdb/`)
+### 3. KDB+/q Streaming Pipeline (`kdb/`)
 - **In-Memory Tickerplant (`kdb/tp.q`)**: High-throughput columnar database running on port `5020`, streaming live `SpotBook` and `OptBook` tables.
 - **Asynchronous Subscriber (`kdb/multicast_sub.py`)**: Consumes multicast UDP frames and streams vectorized tick records into KDB+ via `qPython`.
 
