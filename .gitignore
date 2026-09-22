@@ -8,3 +8,5 @@ logs/
 .pids/
 hdb/
 *.pyc
+gateways/*_greeks.json
+gateways/*_parity.json
