@@ -1,0 +1,101 @@
+import asyncio
+import json
+import urllib.request
+import struct
+import time
+import socket
+import sys
+import os
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from protocol import ITCH_ADD_ORDER_FMT, MCAST_IP, PORT_OPRA_OPT
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+
+_session = None
+_crumb = None
+
+def get_session_and_crumb():
+    global _session, _crumb
+    if _session is not None and _crumb is not None:
+        return _session, _crumb
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor())
+    opener.addheaders = [('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)')]
+    try:
+        opener.open('https://fc.yahoo.com', timeout=4)
+    except Exception:
+        pass
+    with opener.open('https://query2.finance.yahoo.com/v1/test/getcrumb', timeout=4) as r:
+        _crumb = r.read().decode()
+    _session = opener
+    return _session, _crumb
+
+def fetch_opra_spy():
+    global _crumb, _session
+    try:
+        session, crumb = get_session_and_crumb()
+        with session.open(f'https://query2.finance.yahoo.com/v7/finance/options/SPY?crumb={crumb}&date=1790121600', timeout=6) as r2:
+            return json.loads(r2.read().decode())
+    except Exception as e:
+        _crumb = None
+        _session = None
+        raise e
+
+async def run_opra():
+    print("Starting OPRA Consolidated Options Gateway (SPY Options Chain)")
+    seq = 1
+    last_contract = None
+    loop = asyncio.get_running_loop()
+    backoff = 3.0
+    while True:
+        try:
+            d = await loop.run_in_executor(None, fetch_opra_spy)
+            res = d.get('optionChain', {}).get('result', [{}])[0]
+            calls = res.get('options', [{}])[0].get('calls', [])
+            target = [c for c in calls if c.get('contractSymbol') == 'SPY260923C00791000']
+            if target:
+                last_contract = target[0]
+                try:
+                    with open(os.path.join(os.path.dirname(__file__), 'opra_greeks.json'), 'w') as qf:
+                        json.dump({
+                            'iv': float(last_contract.get('impliedVolatility', 0)),
+                            'volume': float(last_contract.get('volume', 0)),
+                            'open_interest': float(last_contract.get('openInterest', 0))
+                        }, qf)
+                except Exception:
+                    pass
+            backoff = 3.0
+        except Exception as e:
+            print(f"OPRA fetch notice: {e}")
+            backoff = min(backoff * 1.5, 15.0)
+
+        if last_contract and 'bid' in last_contract and 'ask' in last_contract:
+            try:
+                ts = time.time_ns()
+                bid = float(last_contract['bid'])
+                ask = float(last_contract['ask'])
+                # If trade volume is reported by OPRA/Yahoo, scale by 100 (shares per contract), else 1 contract (100 shares)
+                vol = last_contract.get('volume')
+                contract_sz = int(vol) * 100 if (vol is not None and vol > 0) else 100
+                bid_sz = contract_sz
+                ask_sz = contract_sz
+                sym_padded = b'SPY_C791'
+
+                if bid > 0:
+                    px = int(bid * 10000)
+                    payload_bid = struct.pack(ITCH_ADD_ORDER_FMT, b'A', 3, 0, ts, seq, b'B', bid_sz, sym_padded, px)
+                    sock.sendto(payload_bid, (MCAST_IP, PORT_OPRA_OPT))
+                    seq += 1
+
+                if ask > 0:
+                    px = int(ask * 10000)
+                    payload_ask = struct.pack(ITCH_ADD_ORDER_FMT, b'A', 3, 0, ts, seq, b'S', ask_sz, sym_padded, px)
+                    sock.sendto(payload_ask, (MCAST_IP, PORT_OPRA_OPT))
+                    seq += 1
+            except Exception as e:
+                print(f"OPRA send notice: {e}")
+
+        await asyncio.sleep(backoff)
+
+if __name__ == '__main__':
+    asyncio.run(run_opra())

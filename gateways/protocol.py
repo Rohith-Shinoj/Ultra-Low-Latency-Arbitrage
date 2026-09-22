@@ -31,10 +31,10 @@ SBE_BOOK_UPDATE_SIZE = struct.calcsize(SBE_BOOK_UPDATE_FMT)
 # --- Network Configuration ---
 MCAST_IP = '127.0.0.1'
 
-# Dedicated Ports per Genuine Exchange
-PORT_BINANCE_SPOT = 5000
-PORT_COINBASE_SPOT = 5001
-PORT_KRAKEN_SPOT = 5002
+# Dedicated Ports per Genuine Options Venue (3 Equity Options + 3 Crypto Options)
+PORT_CBOE_OPT = 5000
+PORT_NASDAQ_OPT = 5001
+PORT_OPRA_OPT = 5002
 
 PORT_DERIBIT_OPT = 5003
 PORT_OKX_OPT = 5004

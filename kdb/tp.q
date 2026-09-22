@@ -10,10 +10,10 @@ upd: { [t;x]
     t_sym insert row
  }
 
-// Periodic disk flush
+// Periodic disk flush (protected evaluation)
 .z.ts: { 
-    if[count SpotBook; `:hdb/SpotBook/ upsert SpotBook];
-    if[count OptBook; `:hdb/OptBook/ upsert OptBook];
+    @[{if[count SpotBook; `:hdb/SpotBook/ upsert .Q.en[`:hdb] SpotBook]}; (); ()];
+    @[{if[count OptBook; `:hdb/OptBook/ upsert .Q.en[`:hdb] OptBook]}; (); ()];
  }
 
 // Start timer

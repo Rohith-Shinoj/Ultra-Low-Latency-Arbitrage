@@ -1,6 +1,6 @@
 import asyncio
 import json
-import websockets
+import urllib.request
 import struct
 import time
 import socket
@@ -12,27 +12,45 @@ from protocol import SBE_BOOK_UPDATE_FMT, MCAST_IP, PORT_BINANCE_OPT
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
 
-async def run_ws():
-    url = "wss://fstream.binance.com/ws/btcusdt@ticker"
+def fetch_binance_option():
+    req = urllib.request.Request(
+        'https://eapi.binance.com/eapi/v1/ticker?symbol=BTC-260923-80000-C',
+        headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    )
+    with urllib.request.urlopen(req, timeout=5) as r:
+        return json.loads(r.read().decode())[0]
+
+async def run_binance():
+    print("Starting Binance Live BTC Options Gateway (BTC-260923-80000-C)")
+    seq = 1
+    loop = asyncio.get_running_loop()
     while True:
         try:
-            async with websockets.connect(url) as ws:
-                print("Connected to Binance Live Derivatives/Futures WS (btcusdt@ticker)")
-                seq = 1
-                while True:
-                    msg = await ws.recv()
-                    data = json.loads(msg)
-                    if 'c' not in data:
-                        continue
-                    ts = time.time_ns()
-                    price = int(float(data['c']) * 10000)
-                    qty = int(float(data['v']) * 100)
-                    payload = struct.pack(SBE_BOOK_UPDATE_FMT, 32, 32, 1, 1, ts, 1, 1, 0, b'C', 1003, seq, price, qty)
-                    sock.sendto(payload, (MCAST_IP, PORT_BINANCE_OPT))
+            tick = await loop.run_in_executor(None, fetch_binance_option)
+            ts = time.time_ns()
+
+            if 'bidPrice' in tick and 'askPrice' in tick:
+                bid = float(tick['bidPrice'])
+                ask = float(tick['askPrice'])
+                qty_raw = tick.get('lastQty')
+                bid_sz = int(float(qty_raw) * 100) if qty_raw else 100
+
+                if bid > 0:
+                    px = int(bid * 10000)
+                    payload_bid = struct.pack(SBE_BOOK_UPDATE_FMT, 32, 32, 1, 1, ts, 1, 1, 0, b'0', 1003, seq, px, bid_sz)
+                    sock.sendto(payload_bid, (MCAST_IP, PORT_BINANCE_OPT))
                     seq += 1
+
+                if ask > 0:
+                    px = int(ask * 10000)
+                    payload_ask = struct.pack(SBE_BOOK_UPDATE_FMT, 32, 32, 1, 1, ts, 1, 1, 0, b'1', 1003, seq, px, bid_sz)
+                    sock.sendto(payload_ask, (MCAST_IP, PORT_BINANCE_OPT))
+                    seq += 1
+
+            await asyncio.sleep(1.0)
         except Exception as e:
-            print(f"Binance Futures WS error: {e}, reconnecting...")
-            await asyncio.sleep(1)
+            print(f"Binance BTC Option Gateway polling notice: {e}")
+            await asyncio.sleep(2.0)
 
 if __name__ == '__main__':
-    asyncio.run(run_ws())
+    asyncio.run(run_binance())

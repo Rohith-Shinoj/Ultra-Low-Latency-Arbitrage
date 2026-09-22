@@ -14,6 +14,7 @@ sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
 
 async def run_ws():
     url = "wss://www.deribit.com/ws/api/v2"
+    channel = "ticker.BTC-23SEP26-80000-C.100ms"
     while True:
         try:
             async with websockets.connect(url) as ws:
@@ -21,9 +22,10 @@ async def run_ws():
                     'jsonrpc': '2.0',
                     'id': 1,
                     'method': 'public/subscribe',
-                    'params': {'channels': ['ticker.BTC-PERPETUAL.raw']}
+                    'params': {'channels': [channel]}
                 }))
-                print("Connected to Deribit Live Derivatives WS (BTC-PERPETUAL)")
+                await ws.recv()
+                print(f"Connected to Deribit Live BTC Options WS ({channel})")
                 seq = 1
                 while True:
                     msg = await ws.recv()
@@ -31,43 +33,45 @@ async def run_ws():
                     if 'params' not in data:
                         continue
                     tick = data['params'].get('data', {})
-                    if 'last_price' not in tick:
+                    if 'index_price' not in tick:
                         continue
                     ts = time.time_ns()
-                    price = int(float(tick['last_price']) * 10000)
-                    qty = int(float(tick.get('best_bid_amount', 1)) * 100)
-                    payload = struct.pack(SBE_BOOK_UPDATE_FMT, 32, 32, 1, 1, ts, 1, 1, 0, b'C', 1001, seq, price, qty)
-                    sock.sendto(payload, (MCAST_IP, PORT_DERIBIT_OPT))
-                    seq += 1
-        except Exception as e:
-            # Fallback to testnet if cloud IP blocked
-            try:
-                test_url = "wss://test.deribit.com/ws/api/v2"
-                async with websockets.connect(test_url) as ws:
-                    await ws.send(json.dumps({
-                        'jsonrpc': '2.0',
-                        'id': 1,
-                        'method': 'public/subscribe',
-                        'params': {'channels': ['ticker.BTC-PERPETUAL.raw']}
-                    }))
-                    print("Connected to Deribit WS (Testnet Fallback)")
-                    seq = 1
-                    while True:
-                        msg = await ws.recv()
-                        data = json.loads(msg)
-                        if 'params' not in data:
-                            continue
-                        tick = data['params'].get('data', {})
-                        if 'last_price' not in tick:
-                            continue
-                        ts = time.time_ns()
-                        price = int(float(tick['last_price']) * 10000)
-                        qty = int(float(tick.get('best_bid_amount', 1)) * 100)
-                        payload = struct.pack(SBE_BOOK_UPDATE_FMT, 32, 32, 1, 1, ts, 1, 1, 0, b'C', 1001, seq, price, qty)
-                        sock.sendto(payload, (MCAST_IP, PORT_DERIBIT_OPT))
+                    idx = float(tick['index_price'])
+
+                    if 'greeks' in tick or 'mark_iv' in tick:
+                        try:
+                            g = tick.get('greeks') or {}
+                            with open(os.path.join(os.path.dirname(__file__), 'deribit_greeks.json'), 'w') as qf:
+                                json.dump({
+                                    'iv': float(tick.get('mark_iv', 0)),
+                                    'delta': float(g.get('delta', 0)),
+                                    'gamma': float(g.get('gamma', 0)),
+                                    'vega': float(g.get('vega', 0)),
+                                    'theta': float(g.get('theta', 0)),
+                                    'underlying_price': float(tick.get('underlying_price', idx))
+                                }, qf)
+                        except Exception:
+                            pass
+
+                    if 'best_bid_price' in tick and tick['best_bid_price'] > 0:
+                        bid_usd = float(tick['best_bid_price']) * idx
+                        bid_px = int(bid_usd * 10000)
+                        bid_qty = int(float(tick['best_bid_amount']) * 100) if 'best_bid_amount' in tick else 0
+                        payload_bid = struct.pack(SBE_BOOK_UPDATE_FMT, 32, 32, 1, 1, ts, 1, 1, 0, b'0', 1001, seq, bid_px, bid_qty)
+                        sock.sendto(payload_bid, (MCAST_IP, PORT_DERIBIT_OPT))
                         seq += 1
-            except Exception:
-                await asyncio.sleep(1)
+
+                    if 'best_ask_price' in tick and tick['best_ask_price'] > 0:
+                        ask_usd = float(tick['best_ask_price']) * idx
+                        ask_px = int(ask_usd * 10000)
+                        ask_qty = int(float(tick['best_ask_amount']) * 100) if 'best_ask_amount' in tick else 0
+                        payload_ask = struct.pack(SBE_BOOK_UPDATE_FMT, 32, 32, 1, 1, ts, 1, 1, 0, b'1', 1001, seq, ask_px, ask_qty)
+                        sock.sendto(payload_ask, (MCAST_IP, PORT_DERIBIT_OPT))
+                        seq += 1
+
+        except Exception as e:
+            print(f"Deribit BTC Option WS notice: {e}, reconnecting...")
+            await asyncio.sleep(2)
 
 if __name__ == '__main__':
     asyncio.run(run_ws())

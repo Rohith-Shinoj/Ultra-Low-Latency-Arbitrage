@@ -12,11 +12,11 @@ from protocol import ITCH_ADD_ORDER_FMT, SBE_BOOK_UPDATE_FMT
 
 MCAST_IP = '239.1.1.1'
 PORTS = {
-    5000: b'BINANCE',
-    5001: b'COINBASE',
-    5002: b'KRAKEN',
-    5003: b'DERIBIT',
-    5004: b'OKX',
+    5000: b'CBOE_OPT',
+    5001: b'NASDAQ_OPT',
+    5002: b'OPRA_OPT',
+    5003: b'DERIBIT_OPT',
+    5004: b'OKX_OPT',
     5005: b'BINANCE_OPT'
 }
 
@@ -42,6 +42,8 @@ def get_option_symbol(sec_id):
 def create_mcast_socket(port):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    if hasattr(socket, 'SO_REUSEPORT'):
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
     sock.bind(('', port))
     
     # Join multicast group specifically on veth1 (10.10.10.2), which is the receiving end of the veth pair
@@ -92,25 +94,19 @@ def main():
                 port = sockets[sock]
                 exch = PORTS[port]
 
-                if port <= 5002: # Spot (ITCH)
+                if port <= 5002: # Equity Options (ITCH)
                     if len(data) == ITCH_SIZE:
                         msg_type, loc, track, ts, ref, side, qty, sym, px = struct.unpack(ITCH_ADD_ORDER_FMT, data)
                         sym_str = sym.decode('utf-8').strip('\x00')
                         price_float = px / 10000.0
                         qty_int = int(qty / 100)
                         
-                        # Use np.datetime64 for KDB timestamps if using pandas/numpy, but qPython takes standard lists
-                        # We'll just push simple tuples/lists
-                        # qpython upd format: ('upd', 'SpotBook', [[time], [sym], [price], [size], [side], [exch]])
-                        # To keep it simple, we push one tick at a time
-
                         try:
-                            # Use numpy.datetime64 for qPython QTIMESTAMP
                             dt = np.datetime64(int(ts), 'ns')
-                            send_upd(q, 'SpotBook', (dt, sym_str.encode(), float(price_float), int(qty_int), side, exch))
+                            send_upd(q, 'OptBook', (dt, sym_str.encode(), float(price_float), int(qty_int), side, exch))
                         except Exception as e:
-                            print(f"Spot Insert Error: {e}")
-                else: # Options (SBE)
+                            print(f"Equity Opt Insert Error: {e}")
+                else: # Crypto Options (SBE)
                     if len(data) == SBE_SIZE:
                         fields = struct.unpack(SBE_BOOK_UPDATE_FMT, data)
                         ts = fields[4]
@@ -122,7 +118,7 @@ def main():
                         price_float = px / 10000.0
                         qty_int = int(qty)
                         sym_bytes = get_option_symbol(sec_id)
-                        side_byte = entry_type if entry_type in [b'C', b'P', b'B', b'S'] else b'C'
+                        side_byte = b'B' if entry_type in [b'0', b'B'] else (b'S' if entry_type in [b'1', b'S'] else entry_type)
                         
                         try:
                             dt = np.datetime64(int(ts), 'ns')
