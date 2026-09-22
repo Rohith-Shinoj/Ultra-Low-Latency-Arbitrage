@@ -1,5 +1,12 @@
 # Ultra-Low-Latency Cross-Venue Arbitrage Terminal
 
+[![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=c%2B%2B&logoColor=white)](engine/)
+[![Solarflare](https://img.shields.io/badge/Solarflare-OpenOnload%20%7C%20ef__vi-FF6F00?logo=amd&logoColor=white)](engine/)
+[![Kernel Bypass](https://img.shields.io/badge/Kernel--Bypass-AF__XDP-success?logo=linux&logoColor=white)](engine/)
+[![KDB+/q](https://img.shields.io/badge/Database-KDB%2B%20%2F%20q-black)](kdb/)
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](gateways/)
+[![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
+
 An institutional-grade, ultra-low-latency arbitrage pipeline and Bloomberg-style dual-pane terminal for cross-venue options and spot markets across Equity and Crypto.
 
 ---
@@ -15,11 +22,12 @@ An institutional-grade, ultra-low-latency arbitrage pipeline and Bloomberg-style
                      ┌────────────────────────┴────────────────────────┐
                      ▼                                                 ▼
         ┌─────────────────────────┐                       ┌─────────────────────────┐
-        │   C++20 Engine (AF_XDP) │                       │      KDB+ Pipeline      │
-        │  • Kernel-Bypass Sockets│                       │  • Multicast Subscriber │
-        │  • Zero-Copy Parsing    │                       │  • In-Memory Tickerplant│
-        │  • Lock-Free L2 Books   │                       │  • Port 5020 (tp.q)     │
-        │  • Cycle Latency (rdtsc)│                       └────────────┬────────────┘
+        │   C++20 Engine (ULL)    │                       │      KDB+ Pipeline      │
+        │  • Solarflare / AF_XDP  │                       │  • Multicast Subscriber │
+        │  • Kernel-Bypass Sockets│                       │  • In-Memory Tickerplant│
+        │  • Zero-Copy Parsing    │                       │  • Port 5020 (tp.q)     │
+        │  • Lock-Free L2 Books   │                       └────────────┬────────────┘
+        │  • Cycle Latency (rdtsc)│                                    │
         └────────────┬────────────┘                                    │
                      │                                                 │
                      └────────────────────────┬────────────────────────┘
@@ -36,8 +44,9 @@ An institutional-grade, ultra-low-latency arbitrage pipeline and Bloomberg-style
 - **Real-Time Quant Greeks**: In-flight Black-Scholes Greeks ($\Delta$, $\Gamma$, $\nu$, $\Theta$, IV) and Put-Call Parity arbitrage signals across 10 core assets.
 
 ### 2. C++20 Ultra-Low-Latency Engine (`engine/`)
-- **AF_XDP Kernel Bypass**: Direct-to-ring wire ingestion using Linux AF_XDP (with fallback to non-blocking zero-copy socket rings), completely bypassing the OS network stack.
-- **Hardware Acceleration Provision**: Primary bypass via AF_XDP with architectural hooks for enterprise Solarflare OpenOnload / `ef_vi` hardware adapters.
+- **Dual Kernel-Bypass Ingress (Solarflare Onload + AF_XDP)**:
+  - **Solarflare OpenOnload / `ef_vi` Scan**: Proactive hardware scanner probes PCIe network adapters for Solarflare vendor IDs (`0x1924` for Solarflare Communications, `0x10ee` for AMD/Xilinx SFC), `/dev/onload` character devices, and active Onload namespaces. Configures `SO_BUSY_POLL` spinning and user-space direct-NIC DMA when present.
+  - **Linux AF_XDP Fallback**: If Solarflare hardware is not present on the bus, automatically activates native Linux AF_XDP (eXpress Data Path) zero-copy ring buffers (`UMEM`, Fill Ring, Rx Ring) and non-blocking socket rings to bypass the kernel network stack without manual intervention.
 - **Zero-Copy & Lock-Free Design**: In-place pointer-cast packet parsing with 64-byte cacheline-aligned (`alignas(64)`) lock-free L2 BBO order books.
 - **Core Pinning & Latency Profiling**: Thread isolated and pinned to CPU Core 2; hardware cycle timers (`rdtsc` / `cntvct_el0`) capture nanosecond stage-by-stage percentiles (P50, P90, P99, P99.9).
 
