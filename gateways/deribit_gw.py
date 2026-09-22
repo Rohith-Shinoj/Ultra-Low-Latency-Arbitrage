@@ -67,20 +67,23 @@ async def run_ws():
                     fwd = float(tick.get('underlying_price', idx))
                     last_fwd = fwd
 
+                    # Detect if linear USDC contract (e.g. SOL, XRP, AVAX) or inverse crypto-settled (BTC, ETH)
+                    is_usdc = ('USDC' in call_inst or 'USDT' in call_inst)
+
                     # If Put tick, capture Put quotes and update deribit_parity.json
                     if put_inst in ch:
-                        p_bid_btc = float(tick.get('best_bid_price') or 0.0)
-                        p_ask_btc = float(tick.get('best_ask_price') or 0.0)
-                        p_mark_btc = float(tick.get('mark_price') or 0.0)
-                        last_put_bid = p_bid_btc * idx
-                        last_put_ask = p_ask_btc * idx
-                        put_mark_usd = p_mark_btc * idx
+                        p_bid_raw = float(tick.get('best_bid_price') or 0.0)
+                        p_ask_raw = float(tick.get('best_ask_price') or 0.0)
+                        p_mark_raw = float(tick.get('mark_price') or 0.0)
+                        last_put_bid = p_bid_raw if is_usdc else (p_bid_raw * idx)
+                        last_put_ask = p_ask_raw if is_usdc else (p_ask_raw * idx)
+                        put_mark_usd = p_mark_raw if is_usdc else (p_mark_raw * idx)
                         try:
                             with open(os.path.join(os.path.dirname(__file__), 'deribit_parity.json'), 'w') as pf:
                                 json.dump({
                                     'spot': idx,
                                     'forward': last_fwd,
-                                    'strike': 80000.0,
+                                    'strike': strike_val,
                                     'call_bid': last_call_bid,
                                     'call_ask': last_call_ask,
                                     'put_bid': last_put_bid,
@@ -107,20 +110,22 @@ async def run_ws():
                         except Exception:
                             pass
 
-                    if 'best_bid_price' in tick and tick['best_bid_price'] > 0:
-                        bid_usd = float(tick['best_bid_price']) * idx
+                    b_px_val = tick.get('best_bid_price')
+                    if b_px_val is not None and float(b_px_val) > 0:
+                        bid_usd = float(b_px_val) if is_usdc else (float(b_px_val) * idx)
                         last_call_bid = bid_usd
                         bid_px = int(bid_usd * 10000)
-                        bid_qty = int(float(tick['best_bid_amount']) * 100) if 'best_bid_amount' in tick else 0
+                        bid_qty = int(float(tick.get('best_bid_amount', 0)) * 100)
                         payload_bid = struct.pack(SBE_BOOK_UPDATE_FMT, 32, 32, 1, 1, ts, 1, 1, 0, b'0', 1001, seq, bid_px, bid_qty)
                         sock.sendto(payload_bid, (MCAST_IP, PORT_DERIBIT_OPT))
                         seq += 1
 
-                    if 'best_ask_price' in tick and tick['best_ask_price'] > 0:
-                        ask_usd = float(tick['best_ask_price']) * idx
+                    a_px_val = tick.get('best_ask_price')
+                    if a_px_val is not None and float(a_px_val) > 0:
+                        ask_usd = float(a_px_val) if is_usdc else (float(a_px_val) * idx)
                         last_call_ask = ask_usd
                         ask_px = int(ask_usd * 10000)
-                        ask_qty = int(float(tick['best_ask_amount']) * 100) if 'best_ask_amount' in tick else 0
+                        ask_qty = int(float(tick.get('best_ask_amount', 0)) * 100)
                         payload_ask = struct.pack(SBE_BOOK_UPDATE_FMT, 32, 32, 1, 1, ts, 1, 1, 0, b'1', 1001, seq, ask_px, ask_qty)
                         sock.sendto(payload_ask, (MCAST_IP, PORT_DERIBIT_OPT))
                         seq += 1
@@ -131,7 +136,7 @@ async def run_ws():
                             json.dump({
                                 'spot': idx,
                                 'forward': last_fwd,
-                                'strike': 80000.0,
+                                'strike': strike_val,
                                 'call_bid': last_call_bid,
                                 'call_ask': last_call_ask,
                                 'put_bid': last_put_bid,

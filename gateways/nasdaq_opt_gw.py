@@ -18,10 +18,15 @@ def load_equity_contract():
         try:
             with open(cfg_path) as f:
                 eq = json.load(f).get('equity', {})
-                return eq.get('underlying', 'SPY'), str(eq.get('nasdaq_strike', '791.00')), str(eq.get('nasdaq_expiry', 'Sep 23'))
+                underlying = eq.get('underlying', 'SPY')
+                nasdaq_strike = str(eq.get('nasdaq_strike', '791.00'))
+                nasdaq_expiry = str(eq.get('nasdaq_expiry', 'Sep 23'))
+                strike = float(eq.get('strike', 791.0))
+                sym = eq.get('sym', f"{underlying}_C{int(strike)}")
+                return underlying, nasdaq_strike, nasdaq_expiry, sym
         except Exception:
             pass
-    return 'SPY', '791.00', 'Sep 23'
+    return 'SPY', '791.00', 'Sep 23', 'SPY_C791'
 
 def fetch_nasdaq_options(underlying):
     headers = {
@@ -35,12 +40,13 @@ def fetch_nasdaq_options(underlying):
         return json.loads(r.read().decode())
 
 async def run_nasdaq():
-    underlying, target_strike, target_expiry = load_equity_contract()
-    print(f"Starting Nasdaq Options Market Gateway ({underlying} {target_strike} {target_expiry})")
+    underlying, target_strike, target_expiry, target_sym = load_equity_contract()
+    print(f"Starting Nasdaq Options Market Gateway ({underlying} {target_strike} {target_expiry} [{target_sym}])")
     seq = 1
     last_contract = None
     loop = asyncio.get_running_loop()
     backoff = 3.0
+    sym_padded = target_sym.encode('utf-8')[:8].ljust(8, b'\x00')
     while True:
         try:
             d = await loop.run_in_executor(None, fetch_nasdaq_options, underlying)
@@ -63,7 +69,6 @@ async def run_nasdaq():
                     ask = float(ask_str)
                     # 1 standard US equity option contract represents 100 underlying shares
                     qty = 100
-                    sym_padded = b'SPY_C791'
 
                     if bid > 0:
                         px = int(bid * 10000)

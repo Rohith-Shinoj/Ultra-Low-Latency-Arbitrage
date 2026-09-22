@@ -20,23 +20,40 @@ PORTS = {
     5005: b'BINANCE_OPT'
 }
 
+ACTIVE_CFG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'gateways', 'active_contracts.json')
 SEC_DEFS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'gateways', 'security_defs.json')
 sec_cache = {}
+last_cfg_mtime = 0
 
 def get_option_symbol(sec_id):
-    global sec_cache
+    global sec_cache, last_cfg_mtime
     sid_str = str(sec_id)
+    now = time.time()
+    if now - last_cfg_mtime > 1.0:
+        last_cfg_mtime = now
+        # Prefer active_contracts.json for real-time dynamic contract switching
+        if os.path.exists(ACTIVE_CFG_FILE):
+            try:
+                import json
+                with open(ACTIVE_CFG_FILE, 'r') as f:
+                    cfg = json.load(f)
+                    c_sym = cfg.get('crypto', {}).get('sym')
+                    if c_sym:
+                        sec_cache['1001'] = c_sym
+                        sec_cache['1002'] = c_sym
+                        sec_cache['1003'] = c_sym
+            except Exception:
+                pass
+        elif os.path.exists(SEC_DEFS_FILE):
+            try:
+                import json
+                with open(SEC_DEFS_FILE, 'r') as f:
+                    sec_cache = json.load(f)
+            except Exception:
+                pass
+
     if sid_str in sec_cache:
         return sec_cache[sid_str].encode()
-    if os.path.exists(SEC_DEFS_FILE):
-        try:
-            import json
-            with open(SEC_DEFS_FILE, 'r') as f:
-                sec_cache = json.load(f)
-            if sid_str in sec_cache:
-                return sec_cache[sid_str].encode()
-        except Exception:
-            pass
     return f"OPT_{sec_id}".encode()
 
 def create_mcast_socket(port):

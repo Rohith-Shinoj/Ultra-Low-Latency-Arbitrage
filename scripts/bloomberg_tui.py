@@ -129,7 +129,7 @@ def load_active_contracts():
     }
 
 def save_active_contracts(crypto_contract: dict, equity_contract: dict):
-    """Persists newly selected contracts to gateways/active_contracts.json."""
+    """Persists newly selected contracts to gateways/active_contracts.json and security_defs.json."""
     active_path = ROOT_DIR / "gateways" / "active_contracts.json"
     data = {
         "crypto": crypto_contract,
@@ -137,11 +137,27 @@ def save_active_contracts(crypto_contract: dict, equity_contract: dict):
     }
     active_path.write_text(json.dumps(data, indent=2))
 
+    # Also update security_defs.json for C++ engine and KDB tickerplant mapping
+    crypto_sym = crypto_contract.get("sym", "BTC_C80K")
+    sec_defs = {
+        "1001": crypto_sym,
+        "1002": crypto_sym,
+        "1003": crypto_sym
+    }
+    sec_defs_path = ROOT_DIR / "gateways" / "security_defs.json"
+    sec_defs_path.write_text(json.dumps(sec_defs, indent=2))
+
 def restart_gateways_bg():
-    """Restarts gateways in background after new contracts are selected."""
+    """Restarts gateways and subscriber in background after new contracts are selected."""
     try:
         subprocess.Popen(
             [sys.executable, str(ROOT_DIR / "scripts" / "control.py"), "restart", "gateways"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            cwd=str(ROOT_DIR)
+        )
+        subprocess.Popen(
+            [sys.executable, str(ROOT_DIR / "scripts" / "control.py"), "restart", "sub"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             cwd=str(ROOT_DIR)

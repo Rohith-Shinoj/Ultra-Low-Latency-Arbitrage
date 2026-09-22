@@ -28,8 +28,12 @@ def fetch_binance_option(symbol):
         f'https://eapi.binance.com/eapi/v1/ticker?symbol={symbol}',
         headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     )
-    with urllib.request.urlopen(req, timeout=5) as r:
-        return json.loads(r.read().decode())[0]
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            res = json.loads(r.read().decode())
+            return res[0] if isinstance(res, list) and res else None
+    except Exception:
+        return None
 
 async def run_binance():
     symbol = load_crypto_contract()
@@ -39,6 +43,9 @@ async def run_binance():
     while True:
         try:
             tick = await loop.run_in_executor(None, fetch_binance_option, symbol)
+            if not tick:
+                await asyncio.sleep(2.0)
+                continue
             ts = time.time_ns()
 
             if 'bidPrice' in tick and 'askPrice' in tick:

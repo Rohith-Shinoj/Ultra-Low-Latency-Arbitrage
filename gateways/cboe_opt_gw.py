@@ -21,6 +21,7 @@ def load_equity_contract():
                 cboe_opt = eq.get('cboe_option', 'SPY260923C00791000')
                 underlying = eq.get('underlying', 'SPY')
                 strike = float(eq.get('strike', 791.0))
+                sym = eq.get('sym', f"{underlying}_C{int(strike)}")
                 L = len(underlying)
                 if len(cboe_opt) >= L + 7:
                     c_opt = cboe_opt[:L+6] + 'C' + cboe_opt[L+7:]
@@ -28,10 +29,10 @@ def load_equity_contract():
                 else:
                     c_opt = cboe_opt
                     p_opt = cboe_opt
-                return underlying, c_opt, p_opt, strike
+                return underlying, c_opt, p_opt, strike, sym
         except Exception:
             pass
-    return 'SPY', 'SPY260923C00791000', 'SPY260923P00791000', 791.0
+    return 'SPY', 'SPY260923C00791000', 'SPY260923P00791000', 791.0, 'SPY_C791'
 
 def fetch_cboe_options(underlying):
     url = f"https://cdn.cboe.com/api/global/delayed_quotes/options/{underlying}.json"
@@ -40,12 +41,13 @@ def fetch_cboe_options(underlying):
         return json.loads(resp.read().decode())['data']
 
 async def run_cboe():
-    underlying, target_call, target_put_name, strike_val = load_equity_contract()
-    print(f"Starting CBOE Equity Options Gateway ({underlying} - {target_call})")
+    underlying, target_call, target_put_name, strike_val, target_sym = load_equity_contract()
+    print(f"Starting CBOE Equity Options Gateway ({underlying} - {target_call} [{target_sym}])")
     seq = 1
     last_contract = None
     loop = asyncio.get_running_loop()
     backoff = 3.0
+    sym_padded = target_sym.encode('utf-8')[:8].ljust(8, b'\x00')
     while True:
         try:
             data = await loop.run_in_executor(None, fetch_cboe_options, underlying)
@@ -84,7 +86,7 @@ async def run_cboe():
                     with open(ppath, 'w') as pf:
                         json.dump({
                             'spot': spy_spot,
-                            'strike': 791.0,
+                            'strike': strike_val,
                             'call_bid': float(c_c.get('bid', 0)),
                             'call_ask': float(c_c.get('ask', 0)),
                             'call_theo': float(c_c.get('theo', 0)),
@@ -107,7 +109,6 @@ async def run_cboe():
                 ask = float(last_contract['ask'])
                 bid_sz = int(float(last_contract['bid_size']) * 100) if 'bid_size' in last_contract else 100
                 ask_sz = int(float(last_contract['ask_size']) * 100) if 'ask_size' in last_contract else 100
-                sym_padded = b'SPY_C791'
 
                 if bid > 0:
                     px = int(bid * 10000)

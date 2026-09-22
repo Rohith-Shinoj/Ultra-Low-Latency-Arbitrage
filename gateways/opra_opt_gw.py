@@ -36,10 +36,14 @@ def load_equity_contract():
         try:
             with open(cfg_path) as f:
                 eq = json.load(f).get('equity', {})
-                return eq.get('underlying', 'SPY'), eq.get('cboe_option', 'SPY260923C00791000')
+                underlying = eq.get('underlying', 'SPY')
+                cboe_opt = eq.get('cboe_option', 'SPY260923C00791000')
+                strike = float(eq.get('strike', 791.0))
+                sym = eq.get('sym', f"{underlying}_C{int(strike)}")
+                return underlying, cboe_opt, sym
         except Exception:
             pass
-    return 'SPY', 'SPY260923C00791000'
+    return 'SPY', 'SPY260923C00791000', 'SPY_C791'
 
 def fetch_opra_options(underlying):
     global _crumb, _session
@@ -53,12 +57,13 @@ def fetch_opra_options(underlying):
         raise e
 
 async def run_opra():
-    underlying, target_symbol = load_equity_contract()
-    print(f"Starting OPRA Consolidated Options Gateway ({underlying} - {target_symbol})")
+    underlying, target_symbol, target_sym = load_equity_contract()
+    print(f"Starting OPRA Consolidated Options Gateway ({underlying} - {target_symbol} [{target_sym}])")
     seq = 1
     last_contract = None
     loop = asyncio.get_running_loop()
     backoff = 3.0
+    sym_padded = target_sym.encode('utf-8')[:8].ljust(8, b'\x00')
     while True:
         try:
             d = await loop.run_in_executor(None, fetch_opra_options, underlying)
@@ -91,7 +96,6 @@ async def run_opra():
                 contract_sz = int(vol) * 100 if (vol is not None and vol > 0) else 100
                 bid_sz = contract_sz
                 ask_sz = contract_sz
-                sym_padded = b'SPY_C791'
 
                 if bid > 0:
                     px = int(bid * 10000)

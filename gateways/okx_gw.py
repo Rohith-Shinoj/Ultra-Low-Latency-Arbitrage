@@ -28,16 +28,24 @@ def fetch_okx_option(inst_id):
         f'https://www.okx.com/api/v5/market/ticker?instId={inst_id}',
         headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     )
-    with urllib.request.urlopen(req, timeout=5) as r:
-        return json.loads(r.read().decode())['data'][0]
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            data = json.loads(r.read().decode()).get('data', [])
+            return data[0] if data else None
+    except Exception:
+        return None
 
 def fetch_crypto_index(underlying):
     req = urllib.request.Request(
         f'https://www.okx.com/api/v5/market/index-tickers?instId={underlying}-USD',
         headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     )
-    with urllib.request.urlopen(req, timeout=5) as r:
-        return float(json.loads(r.read().decode())['data'][0]['idxPx'])
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            data = json.loads(r.read().decode()).get('data', [])
+            return float(data[0]['idxPx']) if data else 1.0
+    except Exception:
+        return 1.0
 
 async def run_okx():
     inst_id, underlying = load_crypto_contract()
@@ -47,6 +55,9 @@ async def run_okx():
     while True:
         try:
             tick = await loop.run_in_executor(None, fetch_okx_option, inst_id)
+            if not tick:
+                await asyncio.sleep(2.0)
+                continue
             idx = await loop.run_in_executor(None, fetch_crypto_index, underlying)
             ts = time.time_ns()
 
