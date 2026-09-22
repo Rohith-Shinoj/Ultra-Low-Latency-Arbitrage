@@ -14,13 +14,14 @@ sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
 
 def load_equity_contract():
     cfg_path = os.path.join(os.path.dirname(__file__), 'active_contracts.json')
+    seed = None
     if os.path.exists(cfg_path):
         try:
             with open(cfg_path) as f:
                 eq = json.load(f).get('equity', {})
-                cboe_opt = eq.get('cboe_option', 'SPY260923C00791000')
+                cboe_opt = eq.get('cboe_option', 'SPY260922C00771000')
                 underlying = eq.get('underlying', 'SPY')
-                strike = float(eq.get('strike', 791.0))
+                strike = float(eq.get('strike', 771.0))
                 sym = eq.get('sym', f"{underlying}_C{int(strike)}")
                 L = len(underlying)
                 if len(cboe_opt) >= L + 7:
@@ -29,102 +30,134 @@ def load_equity_contract():
                 else:
                     c_opt = cboe_opt
                     p_opt = cboe_opt
-                return underlying, c_opt, p_opt, strike, sym
+                if 'bid' in eq and 'ask' in eq and eq['bid'] > 0:
+                    seed = {
+                        'bid': float(eq['bid']),
+                        'ask': float(eq['ask']),
+                        'bid_size': float(eq.get('bid_size', 50)),
+                        'ask_size': float(eq.get('ask_size', 50)),
+                        'iv': float(eq.get('iv', 0.15)),
+                        'theo': float(eq.get('theo', eq['bid'] + 0.01))
+                    }
+                return underlying, c_opt, p_opt, strike, sym, seed
         except Exception:
             pass
-    return 'SPY', 'SPY260923C00791000', 'SPY260923P00791000', 791.0, 'SPY_C791'
+    return 'SPY', 'SPY260922C00771000', 'SPY260922P00771000', 771.0, 'SPY_C771', None
 
 def fetch_cboe_options(underlying):
     url = f"https://cdn.cboe.com/api/global/delayed_quotes/options/{underlying}.json"
-    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64)'})
-    with urllib.request.urlopen(req, timeout=12) as resp:
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+    with urllib.request.urlopen(req, timeout=10) as resp:
         return json.loads(resp.read().decode())['data']
 
 async def run_cboe():
-    underlying, target_call, target_put_name, strike_val, target_sym = load_equity_contract()
+    underlying, target_call, target_put_name, strike_val, target_sym, seed_contract = load_equity_contract()
     print(f"Starting CBOE Equity Options Gateway ({underlying} - {target_call} [{target_sym}])")
     seq = 1
-    last_contract = None
+    last_contract = seed_contract
     loop = asyncio.get_running_loop()
-    backoff = 3.0
-    sym_padded = target_sym.encode('utf-8')[:8].ljust(8, b'\x00')
+    last_fetch_time = 0.0
+    fetch_interval = 30.0  # Polite CDN polling cadence to prevent HTTP 429
+    last_target_call = target_call
+
     while True:
         try:
-            data = await loop.run_in_executor(None, fetch_cboe_options, underlying)
-            options = data.get('options', [])
-            target = [o for o in options if o.get('option') == target_call]
-            target_put = [o for o in options if o.get('option') == target_put_name]
-            spy_spot = float(data.get('current_price', 0.0))
+            curr_underlying, curr_call, curr_put, curr_strike, curr_sym, curr_seed = load_equity_contract()
+            if curr_call != last_target_call:
+                print(f"CBOE Gateway switching contract: {last_target_call} -> {curr_call}")
+                underlying = curr_underlying
+                target_call = curr_call
+                target_put_name = curr_put
+                strike_val = curr_strike
+                target_sym = curr_sym
+                last_target_call = curr_call
+                last_contract = curr_seed
+                last_fetch_time = 0.0
 
-            if target:
-                last_contract = target[0]
-                # Save live quant analytics for contract
-                try:
-                    qpath = os.path.join(os.path.dirname(__file__), 'cboe_greeks.json')
-                    with open(qpath, 'w') as qf:
-                        json.dump({
-                            'iv': float(last_contract.get('iv', 0)),
-                            'delta': float(last_contract.get('delta', 0)),
-                            'gamma': float(last_contract.get('gamma', 0)),
-                            'vega': float(last_contract.get('vega', 0)),
-                            'theta': float(last_contract.get('theta', 0)),
-                            'rho': float(last_contract.get('rho', 0)),
-                            'theo': float(last_contract.get('theo', 0)),
-                            'bid_size': float(last_contract.get('bid_size', 0)),
-                            'ask_size': float(last_contract.get('ask_size', 0)),
-                            'volume': float(last_contract.get('volume', 0)),
-                            'open_interest': float(last_contract.get('open_interest', 0))
-                        }, qf)
-                except Exception:
-                    pass
+            sym_padded = target_sym.encode('utf-8')[:8].ljust(8, b'\x00')
+            now = time.time()
 
-            if target and target_put:
-                c_c = target[0]
-                p_c = target_put[0]
+            # Poll CBOE CDN at relaxed intervals
+            if now - last_fetch_time >= fetch_interval:
+                last_fetch_time = now
                 try:
-                    ppath = os.path.join(os.path.dirname(__file__), 'cboe_parity.json')
-                    with open(ppath, 'w') as pf:
-                        json.dump({
-                            'spot': spy_spot,
-                            'strike': strike_val,
-                            'call_bid': float(c_c.get('bid', 0)),
-                            'call_ask': float(c_c.get('ask', 0)),
-                            'call_theo': float(c_c.get('theo', 0)),
-                            'put_bid': float(p_c.get('bid', 0)),
-                            'put_ask': float(p_c.get('ask', 0)),
-                            'put_theo': float(p_c.get('theo', 0)),
-                            'put_iv': float(p_c.get('iv', 0)),
-                        }, pf)
-                except Exception:
-                    pass
-            backoff = 3.0
+                    data = await loop.run_in_executor(None, fetch_cboe_options, underlying)
+                    options = data.get('options', [])
+                    target = [o for o in options if o.get('option') == target_call]
+                    target_put = [o for o in options if o.get('option') == target_put_name]
+                    spy_spot = float(data.get('current_price', 0.0))
+
+                    if target:
+                        last_contract = target[0]
+                        try:
+                            qpath = os.path.join(os.path.dirname(__file__), 'cboe_greeks.json')
+                            with open(qpath, 'w') as qf:
+                                json.dump({
+                                    'iv': float(last_contract.get('iv', 0)),
+                                    'delta': float(last_contract.get('delta', 0)),
+                                    'gamma': float(last_contract.get('gamma', 0)),
+                                    'vega': float(last_contract.get('vega', 0)),
+                                    'theta': float(last_contract.get('theta', 0)),
+                                    'rho': float(last_contract.get('rho', 0)),
+                                    'theo': float(last_contract.get('theo', 0)),
+                                    'bid_size': float(last_contract.get('bid_size', 0)),
+                                    'ask_size': float(last_contract.get('ask_size', 0)),
+                                    'volume': float(last_contract.get('volume', 0)),
+                                    'open_interest': float(last_contract.get('open_interest', 0))
+                                }, qf)
+                        except Exception:
+                            pass
+
+                    if target and target_put:
+                        c_c = target[0]
+                        p_c = target_put[0]
+                        try:
+                            ppath = os.path.join(os.path.dirname(__file__), 'cboe_parity.json')
+                            with open(ppath, 'w') as pf:
+                                json.dump({
+                                    'spot': spy_spot,
+                                    'strike': strike_val,
+                                    'call_bid': float(c_c.get('bid', 0)),
+                                    'call_ask': float(c_c.get('ask', 0)),
+                                    'call_theo': float(c_c.get('theo', 0)),
+                                    'put_bid': float(p_c.get('bid', 0)),
+                                    'put_ask': float(p_c.get('ask', 0)),
+                                    'put_theo': float(p_c.get('theo', 0)),
+                                    'put_iv': float(p_c.get('iv', 0)),
+                                }, pf)
+                        except Exception:
+                            pass
+                except Exception as e:
+                    print(f"CBOE fetch notice: {e}")
+
+            # Stream active in-memory quote every second
+            if last_contract and 'bid' in last_contract and 'ask' in last_contract:
+                try:
+                    ts = time.time_ns()
+                    bid = float(last_contract['bid'])
+                    ask = float(last_contract['ask'])
+                    bid_sz = int(float(last_contract['bid_size']) * 100) if 'bid_size' in last_contract else 100
+                    ask_sz = int(float(last_contract['ask_size']) * 100) if 'ask_size' in last_contract else 100
+
+                    if bid > 0:
+                        px = int(bid * 10000)
+                        payload_bid = struct.pack(ITCH_ADD_ORDER_FMT, b'A', 1, 0, ts, seq, b'B', bid_sz, sym_padded, px)
+                        sock.sendto(payload_bid, (MCAST_IP, PORT_CBOE_OPT))
+                        seq += 1
+
+                    if ask > 0:
+                        px = int(ask * 10000)
+                        payload_ask = struct.pack(ITCH_ADD_ORDER_FMT, b'A', 1, 0, ts, seq, b'S', ask_sz, sym_padded, px)
+                        sock.sendto(payload_ask, (MCAST_IP, PORT_CBOE_OPT))
+                        seq += 1
+                except Exception as e:
+                    print(f"CBOE send notice: {e}")
+
+            await asyncio.sleep(1.0)
         except Exception as e:
-            print(f"CBOE fetch notice: {e}")
-            backoff = min(backoff * 1.5, 15.0)
-
-        if last_contract and 'bid' in last_contract and 'ask' in last_contract:
-            try:
-                ts = time.time_ns()
-                bid = float(last_contract['bid'])
-                ask = float(last_contract['ask'])
-                bid_sz = int(float(last_contract['bid_size']) * 100) if 'bid_size' in last_contract else 100
-                ask_sz = int(float(last_contract['ask_size']) * 100) if 'ask_size' in last_contract else 100
-
-                if bid > 0:
-                    px = int(bid * 10000)
-                    payload_bid = struct.pack(ITCH_ADD_ORDER_FMT, b'A', 1, 0, ts, seq, b'B', bid_sz, sym_padded, px)
-                    sock.sendto(payload_bid, (MCAST_IP, PORT_CBOE_OPT))
-                    seq += 1
-
-                if ask > 0:
-                    px = int(ask * 10000)
-                    payload_ask = struct.pack(ITCH_ADD_ORDER_FMT, b'A', 1, 0, ts, seq, b'S', ask_sz, sym_padded, px)
-                    sock.sendto(payload_ask, (MCAST_IP, PORT_CBOE_OPT))
-                    seq += 1
-            except Exception as e:
-                print(f"CBOE send notice: {e}")
-
-        await asyncio.sleep(backoff)
+            print(f"CBOE loop notice: {e}")
+            await asyncio.sleep(2.0)
 
 if __name__ == '__main__':
     asyncio.run(run_cboe())
+

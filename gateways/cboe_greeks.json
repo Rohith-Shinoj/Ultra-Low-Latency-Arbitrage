@@ -1,1 +1,1 @@
-{"iv": 0.1405, "delta": 0.9628, "gamma": 0.0455, "vega": 0.0109, "theta": -0.0264, "rho": 0.0, "theo": 3.2013, "bid_size": 65.0, "ask_size": 60.0, "volume": 26876.0, "open_interest": 5193.0}
+{"iv": 0.0, "delta": 0.9798, "gamma": 0.0308, "vega": 0.0049, "theta": -0.0117, "rho": 0.0, "theo": 3.2567, "bid_size": 70.0, "ask_size": 97.0, "volume": 28896.0, "open_interest": 5193.0}

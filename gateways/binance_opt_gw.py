@@ -40,18 +40,28 @@ async def run_binance():
     print(f"Starting Binance Live Options Gateway ({symbol})")
     seq = 1
     loop = asyncio.get_running_loop()
+    last_tick = None
+    last_symbol = symbol
+
     while True:
         try:
-            tick = await loop.run_in_executor(None, fetch_binance_option, symbol)
-            if not tick:
-                await asyncio.sleep(2.0)
-                continue
-            ts = time.time_ns()
+            curr_symbol = load_crypto_contract()
+            if curr_symbol != last_symbol:
+                print(f"Binance Gateway switching contract: {last_symbol} -> {curr_symbol}")
+                symbol = curr_symbol
+                last_symbol = curr_symbol
+                last_tick = None
 
-            if 'bidPrice' in tick and 'askPrice' in tick:
-                bid = float(tick['bidPrice'])
-                ask = float(tick['askPrice'])
-                qty_raw = tick.get('lastQty')
+            tick = await loop.run_in_executor(None, fetch_binance_option, symbol)
+            if tick and 'bidPrice' in tick and 'askPrice' in tick:
+                last_tick = tick
+
+            active_tick = last_tick
+            if active_tick and 'bidPrice' in active_tick and 'askPrice' in active_tick:
+                ts = time.time_ns()
+                bid = float(active_tick['bidPrice'])
+                ask = float(active_tick['askPrice'])
+                qty_raw = active_tick.get('lastQty')
                 bid_sz = int(float(qty_raw) * 100) if qty_raw else 100
 
                 if bid > 0:
@@ -73,3 +83,4 @@ async def run_binance():
 
 if __name__ == '__main__':
     asyncio.run(run_binance())
+

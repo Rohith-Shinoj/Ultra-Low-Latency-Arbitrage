@@ -262,8 +262,8 @@ def cmd_query():
             bids_btc_res = q('select last price, last size by exch from OptBook where side="B", sym like "BTC*"')
             asks_btc_res = q('select last price, last size by exch from OptBook where side="S", sym like "BTC*"')
 
-            bids_spy_res = q('select last price, last size by exch from OptBook where side="B", sym like "SPY_C791*"')
-            asks_spy_res = q('select last price, last size by exch from OptBook where side="S", sym like "SPY_C791*"')
+            bids_spy_res = q('select last price, last size by exch from OptBook where side="B", sym like "SPY*"')
+            asks_spy_res = q('select last price, last size by exch from OptBook where side="S", sym like "SPY*"')
             
             def parse_res(res):
                 out_px = {}
