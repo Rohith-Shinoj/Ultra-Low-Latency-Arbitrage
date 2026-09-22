@@ -12,30 +12,42 @@ from protocol import SBE_BOOK_UPDATE_FMT, MCAST_IP, PORT_OKX_OPT
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
 
-def fetch_okx_option():
+def load_crypto_contract():
+    cfg_path = os.path.join(os.path.dirname(__file__), 'active_contracts.json')
+    if os.path.exists(cfg_path):
+        try:
+            with open(cfg_path) as f:
+                c = json.load(f).get('crypto', {})
+                return c.get('okx_inst_id', 'BTC-USD-260923-80000-C'), c.get('underlying', 'BTC')
+        except Exception:
+            pass
+    return 'BTC-USD-260923-80000-C', 'BTC'
+
+def fetch_okx_option(inst_id):
     req = urllib.request.Request(
-        'https://www.okx.com/api/v5/market/ticker?instId=BTC-USD-260923-80000-C',
+        f'https://www.okx.com/api/v5/market/ticker?instId={inst_id}',
         headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     )
     with urllib.request.urlopen(req, timeout=5) as r:
         return json.loads(r.read().decode())['data'][0]
 
-def fetch_btc_index():
+def fetch_crypto_index(underlying):
     req = urllib.request.Request(
-        'https://www.okx.com/api/v5/market/index-tickers?instId=BTC-USD',
+        f'https://www.okx.com/api/v5/market/index-tickers?instId={underlying}-USD',
         headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     )
     with urllib.request.urlopen(req, timeout=5) as r:
         return float(json.loads(r.read().decode())['data'][0]['idxPx'])
 
 async def run_okx():
-    print("Starting OKX Live BTC Options Gateway (BTC-USD-260923-80000-C)")
+    inst_id, underlying = load_crypto_contract()
+    print(f"Starting OKX Live Options Gateway ({inst_id})")
     seq = 1
     loop = asyncio.get_running_loop()
     while True:
         try:
-            tick = await loop.run_in_executor(None, fetch_okx_option)
-            idx = await loop.run_in_executor(None, fetch_btc_index)
+            tick = await loop.run_in_executor(None, fetch_okx_option, inst_id)
+            idx = await loop.run_in_executor(None, fetch_crypto_index, underlying)
             ts = time.time_ns()
 
             if 'bidPx' in tick and 'askPx' in tick:

@@ -1,0 +1,26 @@
+{
+  "crypto": {
+    "deribit_instrument": "XRP_USDC-2OCT26-1d52-C",
+    "underlying": "XRP",
+    "expiry": "2OCT26",
+    "strike": 1.52,
+    "call_put": "C",
+    "okx_inst_id": "XRP-USD-261002-1.52-C",
+    "binance_symbol": "XRP-261002-1.52-C",
+    "sym": "XRP_C1.52"
+  },
+  "equity": {
+    "cboe_option": "QQQ260922C00743000",
+    "underlying": "QQQ",
+    "expiry": "260922",
+    "strike": 743.0,
+    "call_put": "C",
+    "nasdaq_strike": "743.00",
+    "nasdaq_expiry": "Sep 22",
+    "sym": "QQQ_C743",
+    "bid": 2.17,
+    "ask": 2.19,
+    "iv": 0.156,
+    "theo": 2.193
+  }
+}

@@ -12,10 +12,30 @@ from protocol import SBE_BOOK_UPDATE_FMT, MCAST_IP, PORT_DERIBIT_OPT
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
 
+def load_crypto_contract():
+    cfg_path = os.path.join(os.path.dirname(__file__), 'active_contracts.json')
+    if os.path.exists(cfg_path):
+        try:
+            with open(cfg_path) as f:
+                c = json.load(f).get('crypto', {})
+                inst = c.get('deribit_instrument', 'BTC-23SEP26-80000-C')
+                parts = inst.split('-')
+                if len(parts) == 4:
+                    put_inst = f"{parts[0]}-{parts[1]}-{parts[2]}-P"
+                    call_inst = f"{parts[0]}-{parts[1]}-{parts[2]}-C"
+                else:
+                    call_inst = inst
+                    put_inst = inst.replace('-C', '-P')
+                return call_inst, put_inst, float(c.get('strike', 80000.0))
+        except Exception:
+            pass
+    return "BTC-23SEP26-80000-C", "BTC-23SEP26-80000-P", 80000.0
+
 async def run_ws():
     url = "wss://www.deribit.com/ws/api/v2"
-    call_channel = "ticker.BTC-23SEP26-80000-C.100ms"
-    put_channel = "ticker.BTC-23SEP26-80000-P.100ms"
+    call_inst, put_inst, strike_val = load_crypto_contract()
+    call_channel = f"ticker.{call_inst}.100ms"
+    put_channel = f"ticker.{put_inst}.100ms"
     while True:
         try:
             async with websockets.connect(url) as ws:
@@ -26,7 +46,7 @@ async def run_ws():
                     'params': {'channels': [call_channel, put_channel]}
                 }))
                 await ws.recv()
-                print(f"Connected to Deribit Live BTC Options WS ({call_channel}, {put_channel})")
+                print(f"Connected to Deribit Live Options WS ({call_channel}, {put_channel})")
                 seq = 1
                 last_call_bid = 0.0
                 last_call_ask = 0.0
@@ -48,7 +68,7 @@ async def run_ws():
                     last_fwd = fwd
 
                     # If Put tick, capture Put quotes and update deribit_parity.json
-                    if 'BTC-23SEP26-80000-P' in ch:
+                    if put_inst in ch:
                         p_bid_btc = float(tick.get('best_bid_price') or 0.0)
                         p_ask_btc = float(tick.get('best_ask_price') or 0.0)
                         p_mark_btc = float(tick.get('mark_price') or 0.0)

@@ -9,6 +9,11 @@ import os
 import re
 import json
 import time
+import termios
+import tty
+import select
+import subprocess
+import argparse
 from pathlib import Path
 from collections import deque
 from qpython import qconnection
@@ -21,6 +26,8 @@ from rich.text import Text
 from rich.live import Live
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT_DIR))
+from gateways.contract_catalog import load_catalog, refresh_catalog, CRYPTO_UNDERLYINGS, EQUITY_UNDERLYINGS
 
 SPARK_CHARS = [' ', '▂', '▃', '▄', '▅', '▆', '▇', '█']
 
@@ -87,6 +94,65 @@ def load_parity():
                 pass
     return parity
 
+def load_active_contracts():
+    """Dynamically loads active streaming contract targets with zero hardcoding."""
+    p = ROOT_DIR / 'gateways' / 'active_contracts.json'
+    if p.exists():
+        try:
+            return json.loads(p.read_text())
+        except Exception:
+            pass
+    return {
+        'crypto': {'underlying': 'BTC', 'expiry': '23SEP26', 'strike': 80000.0, 'call_put': 'C', 'deribit_instrument': 'BTC-23SEP26-80000-C', 'sym': 'BTC_C80K'},
+        'equity': {'underlying': 'SPY', 'expiry': '260923', 'strike': 791.0, 'call_put': 'C', 'cboe_option': 'SPY260923C00791000', 'sym': 'SPY_C791'}
+    }
+
+def save_active_contracts(crypto_contract: dict, equity_contract: dict):
+    """Persists newly selected contracts to gateways/active_contracts.json."""
+    active_path = ROOT_DIR / "gateways" / "active_contracts.json"
+    data = {
+        "crypto": crypto_contract,
+        "equity": equity_contract
+    }
+    active_path.write_text(json.dumps(data, indent=2))
+
+def restart_gateways_bg():
+    """Restarts gateways in background after new contracts are selected."""
+    try:
+        subprocess.Popen(
+            [sys.executable, str(ROOT_DIR / "scripts" / "control.py"), "restart", "gateways"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            cwd=str(ROOT_DIR)
+        )
+    except Exception:
+        pass
+
+def get_key_nonblocking():
+    """Reads a single keypress or escape sequence without blocking terminal execution."""
+    if not sys.stdin.isatty():
+        return None
+    rlist, _, _ = select.select([sys.stdin], [], [], 0)
+    if rlist:
+        ch = sys.stdin.read(1)
+        if ch == '\x1b':
+            # Check for escape sequence (arrow keys)
+            rlist2, _, _ = select.select([sys.stdin], [], [], 0.05)
+            if rlist2:
+                ch2 = sys.stdin.read(1)
+                if ch2 == '[':
+                    rlist3, _, _ = select.select([sys.stdin], [], [], 0.05)
+                    if rlist3:
+                        ch3 = sys.stdin.read(1)
+                        if ch3 == 'A': return 'UP'
+                        elif ch3 == 'B': return 'DOWN'
+                        elif ch3 == 'C': return 'RIGHT'
+                        elif ch3 == 'D': return 'LEFT'
+                return 'ESC'
+            return 'ESC'
+        return ch
+    return None
+
 def parse_latency_benchmark():
     """Parses live genuine hardware cycle latency percentiles from logs/latency_benchmark.txt."""
     p = ROOT_DIR / "logs" / "latency_benchmark.txt"
@@ -152,23 +218,26 @@ class TickHistory:
 
 history = TickHistory(maxlen=40)
 
-def fetch_live_quotes():
-    """Queries KDB+ directly for strictly partitioned crypto and equity quotes."""
+def fetch_live_quotes(cfg: dict = None):
+    """Queries KDB+ directly for dynamically partitioned crypto and equity quotes."""
     quotes = {
         'btc': {'bids': {}, 'asks': {}, 'b_sz': {}, 'a_sz': {}},
         'spy': {'bids': {}, 'asks': {}, 'b_sz': {}, 'a_sz': {}},
         'total_ticks': 0
     }
+    crypto_u = (cfg.get('crypto', {}).get('underlying', 'BTC') if cfg else 'BTC')
+    equity_u = (cfg.get('equity', {}).get('underlying', 'SPY') if cfg else 'SPY')
+
     try:
         q = qconnection.QConnection(host='localhost', port=5020, timeout=1.0)
         q.open()
         quotes['total_ticks'] = int(q('count OptBook'))
 
         if quotes['total_ticks'] > 0:
-            bids_btc = q('select last price, last size by exch from OptBook where side="B", sym like "BTC*"')
-            asks_btc = q('select last price, last size by exch from OptBook where side="S", sym like "BTC*"')
-            bids_spy = q('select last price, last size by exch from OptBook where side="B", sym like "SPY_C791*"')
-            asks_spy = q('select last price, last size by exch from OptBook where side="S", sym like "SPY_C791*"')
+            bids_btc = q(f'select last price, last size by exch from OptBook where side="B", sym like "{crypto_u}*"')
+            asks_btc = q(f'select last price, last size by exch from OptBook where side="S", sym like "{crypto_u}*"')
+            bids_spy = q(f'select last price, last size by exch from OptBook where side="B", sym like "{equity_u}*"')
+            asks_spy = q(f'select last price, last size by exch from OptBook where side="S", sym like "{equity_u}*"')
 
             def parse_into(target, bids_res, asks_res):
                 for exch, row in bids_res.items():
@@ -192,8 +261,8 @@ def fetch_live_quotes():
     history.record_tick(quotes)
     return quotes
 
-def make_layout() -> Layout:
-    """Defines the dual-pane Bloomberg-style screen geometry with hardware latency dock."""
+def make_layout(view_mode="split") -> Layout:
+    """Defines the dual-pane Bloomberg-style screen geometry with 100% fullscreen toggle and latency dock."""
     layout = Layout(name="root")
     layout.split(
         Layout(name="header", size=3),
@@ -201,11 +270,243 @@ def make_layout() -> Layout:
         Layout(name="latency_dock", size=10),
         Layout(name="footer", size=3),
     )
-    layout["main"].split_row(
-        Layout(name="crypto_panel", ratio=1),
-        Layout(name="equity_panel", ratio=1),
+    if view_mode == "crypto":
+        layout["main"].split_row(
+            Layout(name="crypto_panel", ratio=1),
+        )
+    elif view_mode == "equity":
+        layout["main"].split_row(
+            Layout(name="equity_panel", ratio=1),
+        )
+    else:  # "split"
+        layout["main"].split_row(
+            Layout(name="crypto_panel", ratio=1),
+            Layout(name="equity_panel", ratio=1),
+        )
+    return layout
+
+def make_selection_layout() -> Layout:
+    """Defines the institutional in-TUI contract selection matrix screen."""
+    layout = Layout(name="root")
+    layout.split(
+        Layout(name="sel_header", size=3),
+        Layout(name="sel_main", ratio=1),
+        Layout(name="sel_footer", size=3),
+    )
+    layout["sel_main"].split_row(
+        Layout(name="sel_crypto", ratio=1),
+        Layout(name="sel_equity", ratio=1),
     )
     return layout
+
+def render_selection_header() -> Panel:
+    grid = Table.grid(expand=True)
+    grid.add_column(justify="left", ratio=1)
+    grid.add_column(justify="center", ratio=2)
+    grid.add_column(justify="right", ratio=1)
+
+    title = Text("OMON <GO>  |  CONTRACT SELECTION MATRIX", style="bold yellow")
+    mid_info = Text.assemble(
+        ("SOURCE: ", "dim"), ("Live Exchange APIs (Deribit / OKX / Binance / CBOE / OPRA)  ", "bold cyan"),
+        ("DATA: ", "dim"), ("100% Genuine (Zero Hardcoding)", "bold green"),
+    )
+    now_str = time.strftime("%Y-%m-%d %H:%M:%S UTC")
+    right_info = Text(now_str, style="bold yellow")
+    grid.add_row(title, mid_info, right_info)
+    return Panel(grid, style="on black", border_style="yellow")
+
+def render_selection_crypto(catalog: dict, sel_c_idx: int, sel_c_strike_idx: int, active_side: str) -> Panel:
+    crypto_cat = catalog.get('crypto', {})
+    
+    # 1. Underlyings bar
+    tabs = []
+    for idx, u in enumerate(CRYPTO_UNDERLYINGS):
+        u_info = crypto_cat.get(u, {})
+        u_spot = u_info.get('spot', 0.0)
+        spot_str = f"${u_spot:,.2f}" if u in ["BTC", "ETH"] else f"${u_spot:.2f}"
+        if idx == sel_c_idx:
+            tabs.append((f" [{idx+1}] {u} ({spot_str}) ", "bold black on cyan"))
+        else:
+            tabs.append((f" [{idx+1}] {u} ({spot_str}) ", "dim"))
+        tabs.append(("  ", ""))
+    tabs_text = Text.assemble(*tabs)
+    
+    # 2. Table of 5 contracts for selected underlying
+    curr = CRYPTO_UNDERLYINGS[sel_c_idx]
+    contracts = crypto_cat.get(curr, {}).get('contracts', [])
+    
+    t = Table(expand=True, box=None, padding=(0, 1))
+    t.add_column("KEY", no_wrap=True)
+    t.add_column("EXPIRY", style="white")
+    t.add_column("STRIKE", justify="right", style="bold green")
+    t.add_column("TYPE", justify="center", style="cyan")
+    t.add_column("DERIBIT INSTRUMENT", style="bold white")
+    t.add_column("STATUS", justify="right")
+    
+    key_letters = ['a', 'b', 'c', 'd', 'e']
+    for i, c in enumerate(contracts[:5]):
+        key_char = key_letters[i] if i < len(key_letters) else str(i+1)
+        stk_val = c.get('strike', 0.0)
+        stk_str = f"${stk_val:,.2f}" if curr in ["BTC", "ETH"] else f"${stk_val:.2f}"
+        is_sel = (i == sel_c_strike_idx)
+        
+        key_display = Text(f"[{key_char}]", style="bold green" if is_sel else "yellow")
+        status = Text("► SELECTED", style="bold green") if is_sel else Text("Available", style="dim")
+            
+        t.add_row(
+            key_display,
+            c.get('expiry', '--'),
+            stk_str,
+            f"{c.get('call_put', 'C')} (CALL)",
+            c.get('deribit_instrument', '--'),
+            status,
+            style="bold green" if is_sel else None
+        )
+        
+    # 3. Overview of all 5 cryptos with all discovered strikes
+    matrix_table = Table(expand=True, box=None, padding=(0, 1))
+    matrix_table.add_column("ASSET", style="bold cyan", no_wrap=True)
+    matrix_table.add_column("SPOT", justify="right", style="dim")
+    matrix_table.add_column("EXPIRY", style="dim")
+    matrix_table.add_column("DISCOVERED NEAR-THE-MONEY STRIKES", style="bold white")
+    
+    for idx, u in enumerate(CRYPTO_UNDERLYINGS):
+        u_info = crypto_cat.get(u, {})
+        u_spot = u_info.get('spot', 0.0)
+        u_exp = u_info.get('expiry', '--')
+        u_contracts = u_info.get('contracts', [])
+        stk_list = [f"${c['strike']:,.0f}" if c['strike'] >= 100 else f"${c['strike']:.2f}" for c in u_contracts]
+        stk_summary = "  |  ".join(stk_list) if stk_list else "Loading..."
+        asset_label = f"[{idx+1}] {u}" + (" ◄" if idx == sel_c_idx else "")
+        spot_fmt = f"${u_spot:,.2f}" if u in ["BTC", "ETH"] else f"${u_spot:.2f}"
+        matrix_table.add_row(asset_label, spot_fmt, u_exp, stk_summary)
+
+    content = Table.grid(expand=True)
+    content.add_column()
+    content.add_row(Text("1. SELECT CRYPTOCURRENCY ASSET ([1-5] to switch asset):", style="bold yellow"))
+    content.add_row(tabs_text)
+    content.add_row(Text("─" * 60, style="dim"))
+    content.add_row(Text(f"ACTIVE OPTIONS CONTRACTS FOR {curr} (Press [a-e] or Up/Down to choose):", style="bold cyan"))
+    content.add_row(t)
+    content.add_row(Text("─" * 60, style="dim"))
+    content.add_row(Text("ALL CRYPTO CONTRACTS CATALOG (5 ASSETS x 5 STRIKES):", style="bold yellow"))
+    content.add_row(matrix_table)
+    
+    border = "bold cyan" if active_side == "crypto" else "dim cyan"
+    title = Text.assemble(
+        ("CRYPTO OPTIONS SELECTION MATRIX", "bold cyan"),
+        ("  [FOCUSED]" if active_side == "crypto" else "", "bold green")
+    )
+    return Panel(content, title=title, border_style=border)
+
+def render_selection_equity(catalog: dict, sel_e_idx: int, sel_e_strike_idx: int, active_side: str) -> Panel:
+    equity_cat = catalog.get('equity', {})
+    
+    # 1. Underlyings bar
+    tabs = []
+    num_keys = ['6', '7', '8', '9', '0']
+    for idx, u in enumerate(EQUITY_UNDERLYINGS):
+        u_info = equity_cat.get(u, {})
+        u_spot = u_info.get('spot', 0.0)
+        k = num_keys[idx]
+        if idx == sel_e_idx:
+            tabs.append((f" [{k}] {u} (${u_spot:.2f}) ", "bold black on magenta"))
+        else:
+            tabs.append((f" [{k}] {u} (${u_spot:.2f}) ", "dim"))
+        tabs.append(("  ", ""))
+    tabs_text = Text.assemble(*tabs)
+    
+    # 2. Table of 5 contracts for selected underlying
+    curr = EQUITY_UNDERLYINGS[sel_e_idx]
+    contracts = equity_cat.get(curr, {}).get('contracts', [])
+    
+    t = Table(expand=True, box=None, padding=(0, 1))
+    t.add_column("KEY", no_wrap=True)
+    t.add_column("EXPIRY", style="white")
+    t.add_column("STRIKE", justify="right", style="bold green")
+    t.add_column("CBOE OPTION", style="bold white")
+    t.add_column("BID / ASK", justify="center", style="cyan")
+    t.add_column("THEO", justify="right", style="magenta")
+    t.add_column("STATUS", justify="right")
+    
+    key_letters = ['f', 'g', 'h', 'i', 'j']
+    for i, c in enumerate(contracts[:5]):
+        key_char = key_letters[i] if i < len(key_letters) else str(i+1)
+        is_sel = (i == sel_e_strike_idx)
+        bid = c.get('bid', 0.0)
+        ask = c.get('ask', 0.0)
+        theo = c.get('theo', 0.0)
+        ba_str = f"${bid:.2f} / ${ask:.2f}" if (bid > 0 or ask > 0) else "--"
+        theo_str = f"${theo:.4f}" if theo > 0 else "--"
+        
+        key_display = Text(f"[{key_char}]", style="bold green" if is_sel else "yellow")
+        status = Text("► SELECTED", style="bold green") if is_sel else Text("Available", style="dim")
+            
+        t.add_row(
+            key_display,
+            c.get('expiry', '--'),
+            f"${c['strike']:.2f}",
+            c.get('cboe_option', '--'),
+            ba_str,
+            theo_str,
+            status,
+            style="bold green" if is_sel else None
+        )
+        
+    # 3. Overview of all 5 equities with all discovered strikes
+    matrix_table = Table(expand=True, box=None, padding=(0, 1))
+    matrix_table.add_column("ASSET", style="bold magenta", no_wrap=True)
+    matrix_table.add_column("SPOT", justify="right", style="dim")
+    matrix_table.add_column("EXPIRY", style="dim")
+    matrix_table.add_column("DISCOVERED NEAR-THE-MONEY STRIKES", style="bold white")
+    
+    for idx, u in enumerate(EQUITY_UNDERLYINGS):
+        u_info = equity_cat.get(u, {})
+        u_spot = u_info.get('spot', 0.0)
+        u_exp = u_info.get('expiry', '--')
+        u_contracts = u_info.get('contracts', [])
+        stk_list = [f"${c['strike']:.2f}" for c in u_contracts]
+        stk_summary = "  |  ".join(stk_list) if stk_list else "Loading..."
+        k = num_keys[idx]
+        asset_label = f"[{k}] {u}" + (" ◄" if idx == sel_e_idx else "")
+        matrix_table.add_row(asset_label, f"${u_spot:.2f}", u_exp, stk_summary)
+
+    content = Table.grid(expand=True)
+    content.add_column()
+    content.add_row(Text("2. SELECT EQUITY ASSET ([6-0] to switch asset):", style="bold yellow"))
+    content.add_row(tabs_text)
+    content.add_row(Text("─" * 60, style="dim"))
+    content.add_row(Text(f"ACTIVE OPTIONS CONTRACTS FOR {curr} (Press [f-j] or Up/Down to choose):", style="bold magenta"))
+    content.add_row(t)
+    content.add_row(Text("─" * 60, style="dim"))
+    content.add_row(Text("ALL EQUITY CONTRACTS CATALOG (5 ASSETS x 5 STRIKES):", style="bold yellow"))
+    content.add_row(matrix_table)
+    
+    border = "bold magenta" if active_side == "equity" else "dim magenta"
+    title = Text.assemble(
+        ("EQUITY OPTIONS SELECTION MATRIX", "bold magenta"),
+        ("  [FOCUSED]" if active_side == "equity" else "", "bold green")
+    )
+    return Panel(content, title=title, border_style=border)
+
+def render_selection_footer(active_side: str) -> Panel:
+    grid = Table.grid(expand=True)
+    grid.add_column(justify="left", ratio=1)
+    grid.add_column(justify="right", ratio=1)
+    left = Text.assemble(
+        ("KEYBOARD NAVIGATION: ", "dim"),
+        ("[Tab]/[Left/Right] Switch Pane  ", "bold white"),
+        ("[Up/Down] Pick Strike  ", "bold white"),
+        ("[1-5] Pick Crypto  ", "bold cyan"),
+        ("[6-0] Pick Equity  ", "bold magenta"),
+    )
+    right = Text.assemble(
+        ("ACTION: ", "dim"),
+        ("[Enter] or [Space] CONFIRM & LAUNCH MONITOR  ", "bold green"),
+        ("[q] Exit", "bold red")
+    )
+    grid.add_row(left, right)
+    return Panel(grid, style="on black", border_style="yellow")
 
 def render_header(total_ticks: int) -> Panel:
     now_str = time.strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -227,12 +528,19 @@ def render_header(total_ticks: int) -> Panel:
     grid.add_row(title, mid_info, right_info)
     return Panel(grid, style="on black", border_style="yellow")
 
-def render_crypto_panel(data: dict, greeks: dict, parity: dict) -> Panel:
+def render_crypto_panel(data: dict, greeks: dict, parity: dict, cfg: dict = None, view_mode: str = "split") -> Panel:
     btc = data['btc']
     bids, asks = btc['bids'], btc['asks']
     b_sz, a_sz = btc['b_sz'], btc['a_sz']
 
-    # Phase 3 & 4: Visual Top-of-Book Depth Ladder with Imbalance
+    crypto_cfg = cfg.get('crypto', {}) if cfg else {}
+    underlying = crypto_cfg.get('underlying', 'BTC')
+    inst_name = crypto_cfg.get('deribit_instrument', 'BTC-23SEP26-80000-C')
+    strike = float(crypto_cfg.get('strike', 80000.0))
+    cp_type = crypto_cfg.get('call_put', 'C')
+    type_str = "Call" if cp_type == 'C' else "Put"
+
+    # Visual Top-of-Book Depth Ladder with Imbalance
     table = Table(expand=True, box=None, padding=(0, 1))
     table.add_column("VENUE", style="bold cyan", no_wrap=True)
     table.add_column("BID ($)", justify="right", style="bold green")
@@ -261,7 +569,7 @@ def render_crypto_panel(data: dict, greeks: dict, parity: dict) -> Panel:
             f"[{imb_style}]{imb_str}[/{imb_style}]"
         )
 
-    # Phase 5: Cross-venue arbitrages with genuine taker fee bounds
+    # Cross-venue arbitrages with genuine taker fee bounds
     d_bid, o_bid, b_bid = bids.get('DERIBIT_OPT'), bids.get('OKX_OPT'), bids.get('BINANCE_OPT')
     d_ask, o_ask, b_ask = asks.get('DERIBIT_OPT'), asks.get('OKX_OPT'), asks.get('BINANCE_OPT')
 
@@ -312,9 +620,9 @@ def render_crypto_panel(data: dict, greeks: dict, parity: dict) -> Panel:
     # Phase 4: Greeks & Options Microstructure Matrix
     dg = greeks.get('deribit', {})
     spot = dg.get('underlying_price', 86450.0)
-    strike = 80000.0
-    intrinsic = max(0.0, spot - strike)
+    intrinsic = max(0.0, spot - strike) if cp_type == 'C' else max(0.0, strike - spot)
     moneyness = ((spot - strike) / strike) * 100.0
+    moneyness_str = f"+{moneyness:.1f}% ITM" if (moneyness >= 0 if cp_type=='C' else moneyness <= 0) else f"{moneyness:.1f}% OTM"
     iv = dg.get('iv', 0.0)
     delta = dg.get('delta', 0.0)
     gamma = dg.get('gamma', 0.0)
@@ -342,12 +650,12 @@ def render_crypto_panel(data: dict, greeks: dict, parity: dict) -> Panel:
 
     content = Table.grid(expand=True)
     content.add_column()
-    content.add_row(Text("BTC OPTIONS: BTC-23SEP26-80000-C (Strike $80,000 Call)", style="bold yellow"))
-    content.add_row(Text(f"Underlier: ${spot:,.2f} | Moneyness: +{moneyness:.1f}% ITM | Intrinsic: ${intrinsic:,.2f}", style="dim"))
+    content.add_row(Text(f"{underlying} OPTIONS: {inst_name} (Strike ${strike:,.0f} {type_str})", style="bold yellow"))
+    content.add_row(Text(f"Underlier: ${spot:,.2f} | Moneyness: {moneyness_str} | Intrinsic: ${intrinsic:,.2f}", style="dim"))
     content.add_row(Text("─" * 60, style="dim"))
     content.add_row(table)
     content.add_row(Text("─" * 60, style="dim"))
-    content.add_row(Text("CROSS-VENUE ARBITRAGES (CRYPTO)", style="bold yellow"))
+    content.add_row(Text(f"CROSS-VENUE ARBITRAGES ({underlying} OPTIONS)", style="bold yellow"))
     content.add_row(Text.from_markup(f"  • {arb1}"))
     content.add_row(Text.from_markup(f"  • {arb2}"))
     content.add_row(Text.from_markup(f"  • {arb3}"))
@@ -384,14 +692,23 @@ def render_crypto_panel(data: dict, greeks: dict, parity: dict) -> Panel:
         ("  • OKX-Deribit: ", "dim"), (f"[{arb_spark}] ", "bold green"), (last_arb, "dim")
     ))
 
-    return Panel(content, title="[bold cyan]CRYPTOCURRENCY DERIVATIVES BOOK[/bold cyan]", border_style="cyan")
+    btn_markup = "[bold yellow][[b] SPLIT 50/50][/bold yellow]" if view_mode == "crypto" else "[bold yellow][[c] EXPAND 100%][/bold yellow]"
+    title_str = f"[bold cyan]{underlying} CRYPTOCURRENCY DERIVATIVES BOOK[/bold cyan]   {btn_markup}"
+    return Panel(content, title=title_str, border_style="cyan")
 
-def render_equity_panel(data: dict, greeks: dict, parity: dict) -> Panel:
+def render_equity_panel(data: dict, greeks: dict, parity: dict, cfg: dict = None, view_mode: str = "split") -> Panel:
     spy = data['spy']
     bids, asks = spy['bids'], spy['asks']
     b_sz, a_sz = spy['b_sz'], spy['a_sz']
 
-    # Phase 3 & 4: Visual Top-of-Book Depth Ladder with Imbalance
+    equity_cfg = cfg.get('equity', {}) if cfg else {}
+    underlying = equity_cfg.get('underlying', 'SPY')
+    cboe_opt = equity_cfg.get('cboe_option', 'SPY260923C00791000')
+    strike = float(equity_cfg.get('strike', 791.0))
+    cp_type = equity_cfg.get('call_put', 'C')
+    type_str = "Call" if cp_type == 'C' else "Put"
+
+    # Visual Top-of-Book Depth Ladder with Imbalance
     table = Table(expand=True, box=None, padding=(0, 1))
     table.add_column("VENUE", style="bold magenta", no_wrap=True)
     table.add_column("BID ($)", justify="right", style="bold green")
@@ -456,7 +773,7 @@ def render_equity_panel(data: dict, greeks: dict, parity: dict) -> Panel:
     # Phase 5: Put-Call Parity & Synthetic Arbitrage Bounds (Equity)
     ep = parity.get('cboe', {})
     eq_spot = ep.get('spot', 773.08)
-    eq_strike = ep.get('strike', 791.0)
+    eq_strike = ep.get('strike', strike)
     c_theo = ep.get('call_theo', theo)
     p_theo = ep.get('put_theo', 18.14)
     s_synth = c_theo - p_theo + eq_strike
@@ -469,12 +786,12 @@ def render_equity_panel(data: dict, greeks: dict, parity: dict) -> Panel:
 
     content = Table.grid(expand=True)
     content.add_column()
-    content.add_row(Text("EQUITY OPTIONS: SPY260923C00791000 (SPY Strike $791.00 Call)", style="bold yellow"))
-    content.add_row(Text(f"Underlier: SPY US ETF | Moneyness: -28.2% OTM | Theo Price: ${theo:.4f}", style="dim"))
+    content.add_row(Text(f"EQUITY OPTIONS: {cboe_opt} ({underlying} Strike ${strike:.2f} {type_str})", style="bold yellow"))
+    content.add_row(Text(f"Underlier: {underlying} US | Spot: ${eq_spot:.2f} | Theo Price: ${theo:.4f}", style="dim"))
     content.add_row(Text("─" * 60, style="dim"))
     content.add_row(table)
     content.add_row(Text("─" * 60, style="dim"))
-    content.add_row(Text("CROSS-VENUE NBBO SPREADS (US EQUITY)", style="bold yellow"))
+    content.add_row(Text(f"CROSS-VENUE NBBO SPREADS ({underlying} EQUITY)", style="bold yellow"))
     content.add_row(Text.from_markup(f"  • {sp1}"))
     content.add_row(Text.from_markup(f"  • {sp2}"))
     content.add_row(Text.from_markup(f"  • {sp3}"))
@@ -515,7 +832,9 @@ def render_equity_panel(data: dict, greeks: dict, parity: dict) -> Panel:
         ("  • CBOE NBBO Width:  ", "dim"), (f"[{sp_spark}] ", "bold white"), (last_width, "dim")
     ))
 
-    return Panel(content, title="[bold magenta]US EQUITY OPTIONS NBBO BOOK[/bold magenta]", border_style="magenta")
+    btn_markup = "[bold yellow][[b] SPLIT 50/50][/bold yellow]" if view_mode == "equity" else "[bold yellow][[e] EXPAND 100%][/bold yellow]"
+    title_str = f"[bold magenta]{underlying} EQUITY OPTIONS NBBO BOOK[/bold magenta]   {btn_markup}"
+    return Panel(content, title=title_str, border_style="magenta")
 
 def render_latency_dock(bench: dict) -> Panel:
     if not bench or not bench.get('stages'):
@@ -591,41 +910,175 @@ def render_latency_dock(bench: dict) -> Panel:
 
     return Panel(content, title="[bold yellow]INSTITUTIONAL HARDWARE CYCLE LATENCY PROFILER (ARM64 cntvct_el0 @ 25.00 MHz)[/bold yellow]", border_style="yellow")
 
-def render_footer() -> Panel:
+def render_footer(view_mode: str = "split") -> Panel:
     grid = Table.grid(expand=True)
     grid.add_column(justify="left", ratio=1)
     grid.add_column(justify="right", ratio=1)
 
+    if view_mode == "crypto":
+        view_cmd = "[[b] SPLIT (50/50) | [e] EXPAND EQUITY (100%)]  "
+    elif view_mode == "equity":
+        view_cmd = "[[b] SPLIT (50/50) | [c] EXPAND CRYPTO (100%)]  "
+    else:
+        view_cmd = "[[c] EXPAND CRYPTO (100%) | [e] EXPAND EQUITY (100%)]  "
+
     left = Text.assemble(
-        ("COMMANDS: ", "dim"),
-        ("[Ctrl+C] Exit  ", "bold white"),
-        ("[r] Force Ingress Sync  ", "bold white"),
+        ("VIEW: ", "dim"),
+        (view_cmd, "bold yellow"),
+        ("ACTIONS: ", "dim"),
+        ("[s] Select Contracts  ", "bold green"),
+        ("[q] Exit  ", "bold white"),
         ("ENGINE: ", "dim"),
         ("LIVE ARB EVALUATION ACTIVE", "bold green"),
     )
-    right = Text("BLOOMBERG TERMINAL MODE [OMON] | PHASE 6 HARDWARE LATENCY PROFILER", style="bold yellow")
+    right = Text(f"BLOOMBERG TERMINAL [OMON] | VIEW: {view_mode.upper()}", style="bold yellow")
     grid.add_row(left, right)
     return Panel(grid, style="on black", border_style="dim")
 
-def run_tui():
+def run_tui(start_in_select: bool = True):
     console = Console()
-    layout = make_layout()
+    catalog = load_catalog()
 
-    with Live(layout, console=console, refresh_per_second=2, screen=True):
-        try:
+    # Determine initial selections from active_contracts.json
+    active_cfg = load_active_contracts()
+    init_crypto_u = active_cfg.get('crypto', {}).get('underlying', 'BTC')
+    init_equity_u = active_cfg.get('equity', {}).get('underlying', 'SPY')
+
+    sel_c_idx = CRYPTO_UNDERLYINGS.index(init_crypto_u) if init_crypto_u in CRYPTO_UNDERLYINGS else 0
+    sel_e_idx = EQUITY_UNDERLYINGS.index(init_equity_u) if init_equity_u in EQUITY_UNDERLYINGS else 0
+    sel_c_strike_idx = 0
+    sel_e_strike_idx = 0
+    active_side = 'crypto'
+
+    # Match initial strikes if present in catalog
+    c_contracts = catalog.get('crypto', {}).get(init_crypto_u, {}).get('contracts', [])
+    for idx, c in enumerate(c_contracts):
+        if c.get('deribit_instrument') == active_cfg.get('crypto', {}).get('deribit_instrument'):
+            sel_c_strike_idx = idx
+            break
+
+    e_contracts = catalog.get('equity', {}).get(init_equity_u, {}).get('contracts', [])
+    for idx, c in enumerate(e_contracts):
+        if c.get('cboe_option') == active_cfg.get('equity', {}).get('cboe_option'):
+            sel_e_strike_idx = idx
+            break
+
+    mode = "select" if start_in_select else "stream"
+    view_mode = "split"  # "split", "crypto", "equity"
+
+    sel_layout = make_selection_layout()
+    stream_layout = make_layout(view_mode)
+    active_layout = sel_layout if mode == "select" else stream_layout
+
+    # Terminal raw / cbreak mode setup
+    is_tty = sys.stdin.isatty()
+    old_term_settings = termios.tcgetattr(sys.stdin) if is_tty else None
+
+    if is_tty:
+        tty.setcbreak(sys.stdin.fileno())
+
+    try:
+        with Live(active_layout, console=console, refresh_per_second=4, screen=True) as live:
             while True:
-                data = fetch_live_quotes()
-                greeks = load_greeks()
-                parity = load_parity()
-                latency_data = parse_latency_benchmark()
-                layout["header"].update(render_header(data['total_ticks']))
-                layout["crypto_panel"].update(render_crypto_panel(data, greeks, parity))
-                layout["equity_panel"].update(render_equity_panel(data, greeks, parity))
-                layout["latency_dock"].update(render_latency_dock(latency_data))
-                layout["footer"].update(render_footer())
-                time.sleep(0.5)
-        except KeyboardInterrupt:
-            pass
+                # 1. Nonblocking keyboard input processing
+                k = get_key_nonblocking()
+                if k:
+                    if mode == "select":
+                        if k in ['1', '2', '3', '4', '5']:
+                            sel_c_idx = int(k) - 1
+                            sel_c_strike_idx = 0
+                            active_side = 'crypto'
+                        elif k in ['a', 'b', 'c', 'd', 'e']:
+                            sel_c_strike_idx = ord(k) - ord('a')
+                            active_side = 'crypto'
+                        elif k in ['6', '7', '8', '9']:
+                            sel_e_idx = int(k) - 6
+                            sel_e_strike_idx = 0
+                            active_side = 'equity'
+                        elif k == '0':
+                            sel_e_idx = 4
+                            sel_e_strike_idx = 0
+                            active_side = 'equity'
+                        elif k in ['f', 'g', 'h', 'i', 'j']:
+                            sel_e_strike_idx = ord(k) - ord('f')
+                            active_side = 'equity'
+                        elif k in ['\t', 'LEFT', 'RIGHT']:
+                            active_side = 'equity' if active_side == 'crypto' else 'crypto'
+                        elif k == 'UP':
+                            if active_side == 'crypto':
+                                sel_c_strike_idx = max(0, sel_c_strike_idx - 1)
+                            else:
+                                sel_e_strike_idx = max(0, sel_e_strike_idx - 1)
+                        elif k == 'DOWN':
+                            if active_side == 'crypto':
+                                sel_c_strike_idx = min(4, sel_c_strike_idx + 1)
+                            else:
+                                sel_e_strike_idx = min(4, sel_e_strike_idx + 1)
+                        elif k in ['\r', '\n', ' ']:
+                            # Confirm contract selection
+                            c_curr = CRYPTO_UNDERLYINGS[sel_c_idx]
+                            c_contract = catalog['crypto'][c_curr]['contracts'][sel_c_strike_idx]
+                            e_curr = EQUITY_UNDERLYINGS[sel_e_idx]
+                            e_contract = catalog['equity'][e_curr]['contracts'][sel_e_strike_idx]
+                            save_active_contracts(c_contract, e_contract)
+                            restart_gateways_bg()
+                            mode = "stream"
+                            stream_layout = make_layout(view_mode)
+                            live.update(stream_layout)
+                        elif k in ['q', 'ESC']:
+                            break
+                    elif mode == "stream":
+                        if k == 'c':
+                            view_mode = "crypto"
+                            stream_layout = make_layout(view_mode)
+                            live.update(stream_layout)
+                        elif k == 'e':
+                            view_mode = "equity"
+                            stream_layout = make_layout(view_mode)
+                            live.update(stream_layout)
+                        elif k == 'b':
+                            view_mode = "split"
+                            stream_layout = make_layout(view_mode)
+                            live.update(stream_layout)
+                        elif k == 's':
+                            mode = "select"
+                            sel_layout = make_selection_layout()
+                            live.update(sel_layout)
+                        elif k in ['q', 'ESC']:
+                            break
+
+                # 2. Render appropriate mode
+                if mode == "select":
+                    sel_layout["sel_header"].update(render_selection_header())
+                    sel_layout["sel_crypto"].update(render_selection_crypto(catalog, sel_c_idx, sel_c_strike_idx, active_side))
+                    sel_layout["sel_equity"].update(render_selection_equity(catalog, sel_e_idx, sel_e_strike_idx, active_side))
+                    sel_layout["sel_footer"].update(render_selection_footer(active_side))
+                else:  # mode == "stream"
+                    cfg = load_active_contracts()
+                    data = fetch_live_quotes(cfg)
+                    greeks = load_greeks()
+                    parity = load_parity()
+                    latency_data = parse_latency_benchmark()
+
+                    stream_layout["header"].update(render_header(data['total_ticks']))
+                    if view_mode in ["split", "crypto"]:
+                        stream_layout["crypto_panel"].update(render_crypto_panel(data, greeks, parity, cfg, view_mode))
+                    if view_mode in ["split", "equity"]:
+                        stream_layout["equity_panel"].update(render_equity_panel(data, greeks, parity, cfg, view_mode))
+                    stream_layout["latency_dock"].update(render_latency_dock(latency_data))
+                    stream_layout["footer"].update(render_footer(view_mode))
+
+                time.sleep(0.25)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        if is_tty and old_term_settings is not None:
+            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_term_settings)
 
 if __name__ == '__main__':
-    run_tui()
+    parser = argparse.ArgumentParser(description="Bloomberg-Style Dual-Pane Terminal Monitor")
+    parser.add_argument("--no-select", action="store_true", help="Skip contract selection screen and jump directly to stream")
+    parser.add_argument("--select-only", action="store_true", help="Launch interactive contract selector only")
+    args = parser.parse_args()
+
+    run_tui(start_in_select=not args.no_select)

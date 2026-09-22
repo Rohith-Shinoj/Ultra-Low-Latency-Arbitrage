@@ -1,0 +1,667 @@
+{
+  "timestamp": "2026-09-22T16:33:12.665339",
+  "crypto": {
+    "BTC": {
+      "spot": 86101.79,
+      "expiry": "2OCT26",
+      "contracts": [
+        {
+          "deribit_instrument": "BTC-2OCT26-84000-C",
+          "underlying": "BTC",
+          "expiry": "2OCT26",
+          "strike": 84000.0,
+          "call_put": "C",
+          "okx_inst_id": "BTC-USD-261002-84000-C",
+          "binance_symbol": "BTC-261002-84000-C",
+          "sym": "BTC_C84000"
+        },
+        {
+          "deribit_instrument": "BTC-2OCT26-85000-C",
+          "underlying": "BTC",
+          "expiry": "2OCT26",
+          "strike": 85000.0,
+          "call_put": "C",
+          "okx_inst_id": "BTC-USD-261002-85000-C",
+          "binance_symbol": "BTC-261002-85000-C",
+          "sym": "BTC_C85000"
+        },
+        {
+          "deribit_instrument": "BTC-2OCT26-86000-C",
+          "underlying": "BTC",
+          "expiry": "2OCT26",
+          "strike": 86000.0,
+          "call_put": "C",
+          "okx_inst_id": "BTC-USD-261002-86000-C",
+          "binance_symbol": "BTC-261002-86000-C",
+          "sym": "BTC_C86000"
+        },
+        {
+          "deribit_instrument": "BTC-2OCT26-87000-C",
+          "underlying": "BTC",
+          "expiry": "2OCT26",
+          "strike": 87000.0,
+          "call_put": "C",
+          "okx_inst_id": "BTC-USD-261002-87000-C",
+          "binance_symbol": "BTC-261002-87000-C",
+          "sym": "BTC_C87000"
+        },
+        {
+          "deribit_instrument": "BTC-2OCT26-88000-C",
+          "underlying": "BTC",
+          "expiry": "2OCT26",
+          "strike": 88000.0,
+          "call_put": "C",
+          "okx_inst_id": "BTC-USD-261002-88000-C",
+          "binance_symbol": "BTC-261002-88000-C",
+          "sym": "BTC_C88000"
+        }
+      ]
+    },
+    "ETH": {
+      "spot": 2731.92,
+      "expiry": "2OCT26",
+      "contracts": [
+        {
+          "deribit_instrument": "ETH-2OCT26-2650-C",
+          "underlying": "ETH",
+          "expiry": "2OCT26",
+          "strike": 2650.0,
+          "call_put": "C",
+          "okx_inst_id": "ETH-USD-261002-2650-C",
+          "binance_symbol": "ETH-261002-2650-C",
+          "sym": "ETH_C2650"
+        },
+        {
+          "deribit_instrument": "ETH-2OCT26-2700-C",
+          "underlying": "ETH",
+          "expiry": "2OCT26",
+          "strike": 2700.0,
+          "call_put": "C",
+          "okx_inst_id": "ETH-USD-261002-2700-C",
+          "binance_symbol": "ETH-261002-2700-C",
+          "sym": "ETH_C2700"
+        },
+        {
+          "deribit_instrument": "ETH-2OCT26-2750-C",
+          "underlying": "ETH",
+          "expiry": "2OCT26",
+          "strike": 2750.0,
+          "call_put": "C",
+          "okx_inst_id": "ETH-USD-261002-2750-C",
+          "binance_symbol": "ETH-261002-2750-C",
+          "sym": "ETH_C2750"
+        },
+        {
+          "deribit_instrument": "ETH-2OCT26-2800-C",
+          "underlying": "ETH",
+          "expiry": "2OCT26",
+          "strike": 2800.0,
+          "call_put": "C",
+          "okx_inst_id": "ETH-USD-261002-2800-C",
+          "binance_symbol": "ETH-261002-2800-C",
+          "sym": "ETH_C2800"
+        },
+        {
+          "deribit_instrument": "ETH-2OCT26-2850-C",
+          "underlying": "ETH",
+          "expiry": "2OCT26",
+          "strike": 2850.0,
+          "call_put": "C",
+          "okx_inst_id": "ETH-USD-261002-2850-C",
+          "binance_symbol": "ETH-261002-2850-C",
+          "sym": "ETH_C2850"
+        }
+      ]
+    },
+    "SOL": {
+      "spot": 116.8685,
+      "expiry": "2OCT26",
+      "contracts": [
+        {
+          "deribit_instrument": "SOL_USDC-2OCT26-115-C",
+          "underlying": "SOL",
+          "expiry": "2OCT26",
+          "strike": 115.0,
+          "call_put": "C",
+          "okx_inst_id": "SOL-USD-261002-115-C",
+          "binance_symbol": "SOL-261002-115-C",
+          "sym": "SOL_C115"
+        },
+        {
+          "deribit_instrument": "SOL_USDC-2OCT26-116-C",
+          "underlying": "SOL",
+          "expiry": "2OCT26",
+          "strike": 116.0,
+          "call_put": "C",
+          "okx_inst_id": "SOL-USD-261002-116-C",
+          "binance_symbol": "SOL-261002-116-C",
+          "sym": "SOL_C116"
+        },
+        {
+          "deribit_instrument": "SOL_USDC-2OCT26-117-C",
+          "underlying": "SOL",
+          "expiry": "2OCT26",
+          "strike": 117.0,
+          "call_put": "C",
+          "okx_inst_id": "SOL-USD-261002-117-C",
+          "binance_symbol": "SOL-261002-117-C",
+          "sym": "SOL_C117"
+        },
+        {
+          "deribit_instrument": "SOL_USDC-2OCT26-118-C",
+          "underlying": "SOL",
+          "expiry": "2OCT26",
+          "strike": 118.0,
+          "call_put": "C",
+          "okx_inst_id": "SOL-USD-261002-118-C",
+          "binance_symbol": "SOL-261002-118-C",
+          "sym": "SOL_C118"
+        },
+        {
+          "deribit_instrument": "SOL_USDC-2OCT26-119-C",
+          "underlying": "SOL",
+          "expiry": "2OCT26",
+          "strike": 119.0,
+          "call_put": "C",
+          "okx_inst_id": "SOL-USD-261002-119-C",
+          "binance_symbol": "SOL-261002-119-C",
+          "sym": "SOL_C119"
+        }
+      ]
+    },
+    "XRP": {
+      "spot": 1.5489,
+      "expiry": "2OCT26",
+      "contracts": [
+        {
+          "deribit_instrument": "XRP_USDC-2OCT26-1d52-C",
+          "underlying": "XRP",
+          "expiry": "2OCT26",
+          "strike": 1.52,
+          "call_put": "C",
+          "okx_inst_id": "XRP-USD-261002-1.52-C",
+          "binance_symbol": "XRP-261002-1.52-C",
+          "sym": "XRP_C1.52"
+        },
+        {
+          "deribit_instrument": "XRP_USDC-2OCT26-1d54-C",
+          "underlying": "XRP",
+          "expiry": "2OCT26",
+          "strike": 1.54,
+          "call_put": "C",
+          "okx_inst_id": "XRP-USD-261002-1.54-C",
+          "binance_symbol": "XRP-261002-1.54-C",
+          "sym": "XRP_C1.54"
+        },
+        {
+          "deribit_instrument": "XRP_USDC-2OCT26-1d55-C",
+          "underlying": "XRP",
+          "expiry": "2OCT26",
+          "strike": 1.55,
+          "call_put": "C",
+          "okx_inst_id": "XRP-USD-261002-1.55-C",
+          "binance_symbol": "XRP-261002-1.55-C",
+          "sym": "XRP_C1.55"
+        },
+        {
+          "deribit_instrument": "XRP_USDC-2OCT26-1d56-C",
+          "underlying": "XRP",
+          "expiry": "2OCT26",
+          "strike": 1.56,
+          "call_put": "C",
+          "okx_inst_id": "XRP-USD-261002-1.56-C",
+          "binance_symbol": "XRP-261002-1.56-C",
+          "sym": "XRP_C1.56"
+        },
+        {
+          "deribit_instrument": "XRP_USDC-2OCT26-1d58-C",
+          "underlying": "XRP",
+          "expiry": "2OCT26",
+          "strike": 1.58,
+          "call_put": "C",
+          "okx_inst_id": "XRP-USD-261002-1.58-C",
+          "binance_symbol": "XRP-261002-1.58-C",
+          "sym": "XRP_C1.58"
+        }
+      ]
+    },
+    "AVAX": {
+      "spot": 11.117,
+      "expiry": "2OCT26",
+      "contracts": [
+        {
+          "deribit_instrument": "AVAX_USDC-2OCT26-10d8-C",
+          "underlying": "AVAX",
+          "expiry": "2OCT26",
+          "strike": 10.8,
+          "call_put": "C",
+          "okx_inst_id": "AVAX-USD-261002-10.8-C",
+          "binance_symbol": "AVAX-261002-10.8-C",
+          "sym": "AVAX_C10.8"
+        },
+        {
+          "deribit_instrument": "AVAX_USDC-2OCT26-11-C",
+          "underlying": "AVAX",
+          "expiry": "2OCT26",
+          "strike": 11.0,
+          "call_put": "C",
+          "okx_inst_id": "AVAX-USD-261002-11-C",
+          "binance_symbol": "AVAX-261002-11-C",
+          "sym": "AVAX_C11"
+        },
+        {
+          "deribit_instrument": "AVAX_USDC-2OCT26-11d2-C",
+          "underlying": "AVAX",
+          "expiry": "2OCT26",
+          "strike": 11.2,
+          "call_put": "C",
+          "okx_inst_id": "AVAX-USD-261002-11.2-C",
+          "binance_symbol": "AVAX-261002-11.2-C",
+          "sym": "AVAX_C11.2"
+        },
+        {
+          "deribit_instrument": "AVAX_USDC-2OCT26-11d4-C",
+          "underlying": "AVAX",
+          "expiry": "2OCT26",
+          "strike": 11.4,
+          "call_put": "C",
+          "okx_inst_id": "AVAX-USD-261002-11.4-C",
+          "binance_symbol": "AVAX-261002-11.4-C",
+          "sym": "AVAX_C11.4"
+        },
+        {
+          "deribit_instrument": "AVAX_USDC-2OCT26-11d5-C",
+          "underlying": "AVAX",
+          "expiry": "2OCT26",
+          "strike": 11.5,
+          "call_put": "C",
+          "okx_inst_id": "AVAX-USD-261002-11.5-C",
+          "binance_symbol": "AVAX-261002-11.5-C",
+          "sym": "AVAX_C11.5"
+        }
+      ]
+    }
+  },
+  "equity": {
+    "SPY": {
+      "spot": 773.215,
+      "expiry": "260922",
+      "contracts": [
+        {
+          "cboe_option": "SPY260922C00771000",
+          "underlying": "SPY",
+          "expiry": "260922",
+          "strike": 771.0,
+          "call_put": "C",
+          "nasdaq_strike": "771.00",
+          "nasdaq_expiry": "Sep 22",
+          "sym": "SPY_C771",
+          "bid": 2.37,
+          "ask": 2.38,
+          "iv": 0.1266,
+          "theo": 2.3903
+        },
+        {
+          "cboe_option": "SPY260922C00772000",
+          "underlying": "SPY",
+          "expiry": "260922",
+          "strike": 772.0,
+          "call_put": "C",
+          "nasdaq_strike": "772.00",
+          "nasdaq_expiry": "Sep 22",
+          "sym": "SPY_C772",
+          "bid": 1.52,
+          "ask": 1.53,
+          "iv": 0.1137,
+          "theo": 1.531
+        },
+        {
+          "cboe_option": "SPY260922C00773000",
+          "underlying": "SPY",
+          "expiry": "260922",
+          "strike": 773.0,
+          "call_put": "C",
+          "nasdaq_strike": "773.00",
+          "nasdaq_expiry": "Sep 22",
+          "sym": "SPY_C773",
+          "bid": 0.83,
+          "ask": 0.84,
+          "iv": 0.1056,
+          "theo": 0.8362
+        },
+        {
+          "cboe_option": "SPY260922C00774000",
+          "underlying": "SPY",
+          "expiry": "260922",
+          "strike": 774.0,
+          "call_put": "C",
+          "nasdaq_strike": "774.00",
+          "nasdaq_expiry": "Sep 22",
+          "sym": "SPY_C774",
+          "bid": 0.38,
+          "ask": 0.39,
+          "iv": 0.104,
+          "theo": 0.384
+        },
+        {
+          "cboe_option": "SPY260922C00775000",
+          "underlying": "SPY",
+          "expiry": "260922",
+          "strike": 775.0,
+          "call_put": "C",
+          "nasdaq_strike": "775.00",
+          "nasdaq_expiry": "Sep 22",
+          "sym": "SPY_C775",
+          "bid": 0.15,
+          "ask": 0.16,
+          "iv": 0.1062,
+          "theo": 0.1597
+        }
+      ]
+    },
+    "QQQ": {
+      "spot": 744.83,
+      "expiry": "260922",
+      "contracts": [
+        {
+          "cboe_option": "QQQ260922C00743000",
+          "underlying": "QQQ",
+          "expiry": "260922",
+          "strike": 743.0,
+          "call_put": "C",
+          "nasdaq_strike": "743.00",
+          "nasdaq_expiry": "Sep 22",
+          "sym": "QQQ_C743",
+          "bid": 2.17,
+          "ask": 2.19,
+          "iv": 0.156,
+          "theo": 2.193
+        },
+        {
+          "cboe_option": "QQQ260922C00744000",
+          "underlying": "QQQ",
+          "expiry": "260922",
+          "strike": 744.0,
+          "call_put": "C",
+          "nasdaq_strike": "744.00",
+          "nasdaq_expiry": "Sep 22",
+          "sym": "QQQ_C744",
+          "bid": 1.42,
+          "ask": 1.43,
+          "iv": 0.1459,
+          "theo": 1.412
+        },
+        {
+          "cboe_option": "QQQ260922C00745000",
+          "underlying": "QQQ",
+          "expiry": "260922",
+          "strike": 745.0,
+          "call_put": "C",
+          "nasdaq_strike": "745.00",
+          "nasdaq_expiry": "Sep 22",
+          "sym": "QQQ_C745",
+          "bid": 0.82,
+          "ask": 0.83,
+          "iv": 0.1405,
+          "theo": 0.8114
+        },
+        {
+          "cboe_option": "QQQ260922C00746000",
+          "underlying": "QQQ",
+          "expiry": "260922",
+          "strike": 746.0,
+          "call_put": "C",
+          "nasdaq_strike": "746.00",
+          "nasdaq_expiry": "Sep 22",
+          "sym": "QQQ_C746",
+          "bid": 0.43,
+          "ask": 0.44,
+          "iv": 0.1381,
+          "theo": 0.4342
+        },
+        {
+          "cboe_option": "QQQ260922C00747000",
+          "underlying": "QQQ",
+          "expiry": "260922",
+          "strike": 747.0,
+          "call_put": "C",
+          "nasdaq_strike": "747.00",
+          "nasdaq_expiry": "Sep 22",
+          "sym": "QQQ_C747",
+          "bid": 0.21,
+          "ask": 0.22,
+          "iv": 0.141,
+          "theo": 0.243
+        }
+      ]
+    },
+    "AAPL": {
+      "spot": 342.64,
+      "expiry": "260923",
+      "contracts": [
+        {
+          "cboe_option": "AAPL260923C00337500",
+          "underlying": "AAPL",
+          "expiry": "260923",
+          "strike": 337.5,
+          "call_put": "C",
+          "nasdaq_strike": "337.50",
+          "nasdaq_expiry": "Sep 23",
+          "sym": "AAPL_C337",
+          "bid": 5.6,
+          "ask": 5.9,
+          "iv": 0.3011,
+          "theo": 5.6484
+        },
+        {
+          "cboe_option": "AAPL260923C00340000",
+          "underlying": "AAPL",
+          "expiry": "260923",
+          "strike": 340.0,
+          "call_put": "C",
+          "nasdaq_strike": "340.00",
+          "nasdaq_expiry": "Sep 23",
+          "sym": "AAPL_C340",
+          "bid": 3.55,
+          "ask": 3.75,
+          "iv": 0.2662,
+          "theo": 3.6628
+        },
+        {
+          "cboe_option": "AAPL260923C00342500",
+          "underlying": "AAPL",
+          "expiry": "260923",
+          "strike": 342.5,
+          "call_put": "C",
+          "nasdaq_strike": "342.50",
+          "nasdaq_expiry": "Sep 23",
+          "sym": "AAPL_C342",
+          "bid": 2.05,
+          "ask": 2.11,
+          "iv": 0.2582,
+          "theo": 2.0933
+        },
+        {
+          "cboe_option": "AAPL260923C00345000",
+          "underlying": "AAPL",
+          "expiry": "260923",
+          "strike": 345.0,
+          "call_put": "C",
+          "nasdaq_strike": "345.00",
+          "nasdaq_expiry": "Sep 23",
+          "sym": "AAPL_C345",
+          "bid": 1.03,
+          "ask": 1.05,
+          "iv": 0.2559,
+          "theo": 1.0359
+        },
+        {
+          "cboe_option": "AAPL260923C00347500",
+          "underlying": "AAPL",
+          "expiry": "260923",
+          "strike": 347.5,
+          "call_put": "C",
+          "nasdaq_strike": "347.50",
+          "nasdaq_expiry": "Sep 23",
+          "sym": "AAPL_C347",
+          "bid": 0.44,
+          "ask": 0.46,
+          "iv": 0.2572,
+          "theo": 0.4455
+        }
+      ]
+    },
+    "NVDA": {
+      "spot": 228.845,
+      "expiry": "260923",
+      "contracts": [
+        {
+          "cboe_option": "NVDA260923C00225000",
+          "underlying": "NVDA",
+          "expiry": "260923",
+          "strike": 225.0,
+          "call_put": "C",
+          "nasdaq_strike": "225.00",
+          "nasdaq_expiry": "Sep 23",
+          "sym": "NVDA_C225",
+          "bid": 4.15,
+          "ask": 4.3,
+          "iv": 0.3025,
+          "theo": 4.2556
+        },
+        {
+          "cboe_option": "NVDA260923C00227500",
+          "underlying": "NVDA",
+          "expiry": "260923",
+          "strike": 227.5,
+          "call_put": "C",
+          "nasdaq_strike": "227.50",
+          "nasdaq_expiry": "Sep 23",
+          "sym": "NVDA_C227",
+          "bid": 2.32,
+          "ask": 2.34,
+          "iv": 0.2986,
+          "theo": 2.3276
+        },
+        {
+          "cboe_option": "NVDA260923C00230000",
+          "underlying": "NVDA",
+          "expiry": "260923",
+          "strike": 230.0,
+          "call_put": "C",
+          "nasdaq_strike": "230.00",
+          "nasdaq_expiry": "Sep 23",
+          "sym": "NVDA_C230",
+          "bid": 1.01,
+          "ask": 1.02,
+          "iv": 0.2911,
+          "theo": 1.0163
+        },
+        {
+          "cboe_option": "NVDA260923C00232500",
+          "underlying": "NVDA",
+          "expiry": "260923",
+          "strike": 232.5,
+          "call_put": "C",
+          "nasdaq_strike": "232.50",
+          "nasdaq_expiry": "Sep 23",
+          "sym": "NVDA_C232",
+          "bid": 0.37,
+          "ask": 0.38,
+          "iv": 0.2993,
+          "theo": 0.3716
+        },
+        {
+          "cboe_option": "NVDA260923C00235000",
+          "underlying": "NVDA",
+          "expiry": "260923",
+          "strike": 235.0,
+          "call_put": "C",
+          "nasdaq_strike": "235.00",
+          "nasdaq_expiry": "Sep 23",
+          "sym": "NVDA_C235",
+          "bid": 0.13,
+          "ask": 0.14,
+          "iv": 0.3194,
+          "theo": 0.14
+        }
+      ]
+    },
+    "TSLA": {
+      "spot": 376.6994,
+      "expiry": "260923",
+      "contracts": [
+        {
+          "cboe_option": "TSLA260923C00372500",
+          "underlying": "TSLA",
+          "expiry": "260923",
+          "strike": 372.5,
+          "call_put": "C",
+          "nasdaq_strike": "372.50",
+          "nasdaq_expiry": "Sep 23",
+          "sym": "TSLA_C372",
+          "bid": 5.95,
+          "ask": 6.05,
+          "iv": 0.4068,
+          "theo": 6.0559
+        },
+        {
+          "cboe_option": "TSLA260923C00375000",
+          "underlying": "TSLA",
+          "expiry": "260923",
+          "strike": 375.0,
+          "call_put": "C",
+          "nasdaq_strike": "375.00",
+          "nasdaq_expiry": "Sep 23",
+          "sym": "TSLA_C375",
+          "bid": 4.45,
+          "ask": 4.5,
+          "iv": 0.4132,
+          "theo": 4.4941
+        },
+        {
+          "cboe_option": "TSLA260923C00377500",
+          "underlying": "TSLA",
+          "expiry": "260923",
+          "strike": 377.5,
+          "call_put": "C",
+          "nasdaq_strike": "377.50",
+          "nasdaq_expiry": "Sep 23",
+          "sym": "TSLA_C377",
+          "bid": 3.2,
+          "ask": 3.25,
+          "iv": 0.4188,
+          "theo": 3.2279
+        },
+        {
+          "cboe_option": "TSLA260923C00380000",
+          "underlying": "TSLA",
+          "expiry": "260923",
+          "strike": 380.0,
+          "call_put": "C",
+          "nasdaq_strike": "380.00",
+          "nasdaq_expiry": "Sep 23",
+          "sym": "TSLA_C380",
+          "bid": 2.25,
+          "ask": 2.28,
+          "iv": 0.4265,
+          "theo": 2.2476
+        },
+        {
+          "cboe_option": "TSLA260923C00382500",
+          "underlying": "TSLA",
+          "expiry": "260923",
+          "strike": 382.5,
+          "call_put": "C",
+          "nasdaq_strike": "382.50",
+          "nasdaq_expiry": "Sep 23",
+          "sym": "TSLA_C382",
+          "bid": 1.53,
+          "ask": 1.56,
+          "iv": 0.434,
+          "theo": 1.5232
+        }
+      ]
+    }
+  }
+}

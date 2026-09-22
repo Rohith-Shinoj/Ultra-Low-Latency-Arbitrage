@@ -30,11 +30,22 @@ def get_session_and_crumb():
     _session = opener
     return _session, _crumb
 
-def fetch_opra_spy():
+def load_equity_contract():
+    cfg_path = os.path.join(os.path.dirname(__file__), 'active_contracts.json')
+    if os.path.exists(cfg_path):
+        try:
+            with open(cfg_path) as f:
+                eq = json.load(f).get('equity', {})
+                return eq.get('underlying', 'SPY'), eq.get('cboe_option', 'SPY260923C00791000')
+        except Exception:
+            pass
+    return 'SPY', 'SPY260923C00791000'
+
+def fetch_opra_options(underlying):
     global _crumb, _session
     try:
         session, crumb = get_session_and_crumb()
-        with session.open(f'https://query2.finance.yahoo.com/v7/finance/options/SPY?crumb={crumb}&date=1790121600', timeout=6) as r2:
+        with session.open(f'https://query2.finance.yahoo.com/v7/finance/options/{underlying}?crumb={crumb}&date=1790121600', timeout=6) as r2:
             return json.loads(r2.read().decode())
     except Exception as e:
         _crumb = None
@@ -42,17 +53,18 @@ def fetch_opra_spy():
         raise e
 
 async def run_opra():
-    print("Starting OPRA Consolidated Options Gateway (SPY Options Chain)")
+    underlying, target_symbol = load_equity_contract()
+    print(f"Starting OPRA Consolidated Options Gateway ({underlying} - {target_symbol})")
     seq = 1
     last_contract = None
     loop = asyncio.get_running_loop()
     backoff = 3.0
     while True:
         try:
-            d = await loop.run_in_executor(None, fetch_opra_spy)
+            d = await loop.run_in_executor(None, fetch_opra_options, underlying)
             res = d.get('optionChain', {}).get('result', [{}])[0]
             calls = res.get('options', [{}])[0].get('calls', [])
-            target = [c for c in calls if c.get('contractSymbol') == 'SPY260923C00791000']
+            target = [c for c in calls if c.get('contractSymbol') == target_symbol]
             if target:
                 last_contract = target[0]
                 try:

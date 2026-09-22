@@ -12,27 +12,40 @@ from protocol import ITCH_ADD_ORDER_FMT, MCAST_IP, PORT_NASDAQ_OPT
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
 
-def fetch_nasdaq_spy():
+def load_equity_contract():
+    cfg_path = os.path.join(os.path.dirname(__file__), 'active_contracts.json')
+    if os.path.exists(cfg_path):
+        try:
+            with open(cfg_path) as f:
+                eq = json.load(f).get('equity', {})
+                return eq.get('underlying', 'SPY'), str(eq.get('nasdaq_strike', '791.00')), str(eq.get('nasdaq_expiry', 'Sep 23'))
+        except Exception:
+            pass
+    return 'SPY', '791.00', 'Sep 23'
+
+def fetch_nasdaq_options(underlying):
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Accept': 'application/json, text/plain, */*',
     }
-    url = 'https://api.nasdaq.com/api/quote/SPY/option-chain?assetclass=etf'
+    assetclass = 'etf' if underlying in ['SPY', 'QQQ'] else 'stocks'
+    url = f'https://api.nasdaq.com/api/quote/{underlying}/option-chain?assetclass={assetclass}'
     req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=10) as r:
         return json.loads(r.read().decode())
 
 async def run_nasdaq():
-    print("Starting Nasdaq Options Market Gateway (SPY Options Chain)")
+    underlying, target_strike, target_expiry = load_equity_contract()
+    print(f"Starting Nasdaq Options Market Gateway ({underlying} {target_strike} {target_expiry})")
     seq = 1
     last_contract = None
     loop = asyncio.get_running_loop()
     backoff = 3.0
     while True:
         try:
-            d = await loop.run_in_executor(None, fetch_nasdaq_spy)
+            d = await loop.run_in_executor(None, fetch_nasdaq_options, underlying)
             rows = ((d.get('data') or {}).get('table') or {}).get('rows') or []
-            target = [r for r in rows if r.get('strike') == '791.00' and r.get('expiryDate') == 'Sep 23']
+            target = [r for r in rows if r.get('strike') == target_strike and r.get('expiryDate') == target_expiry]
             if target:
                 last_contract = target[0]
             backoff = 3.0

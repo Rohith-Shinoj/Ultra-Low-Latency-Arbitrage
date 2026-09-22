@@ -1,1 +1,1 @@
-{"spot": 773.02, "strike": 791.0, "call_bid": 0.01, "call_ask": 0.02, "call_theo": 0.0183, "put_bid": 17.95, "put_ask": 18.02, "put_theo": 18.0143, "put_iv": 0.0}
+{"spot": 746.09, "strike": 791.0, "call_bid": 3.1, "call_ask": 3.2, "call_theo": 3.1727, "put_bid": 0.06, "put_ask": 0.07, "put_theo": 0.0627, "put_iv": 0.1674}

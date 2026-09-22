@@ -12,21 +12,33 @@ from protocol import SBE_BOOK_UPDATE_FMT, MCAST_IP, PORT_BINANCE_OPT
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
 
-def fetch_binance_option():
+def load_crypto_contract():
+    cfg_path = os.path.join(os.path.dirname(__file__), 'active_contracts.json')
+    if os.path.exists(cfg_path):
+        try:
+            with open(cfg_path) as f:
+                c = json.load(f).get('crypto', {})
+                return c.get('binance_symbol', 'BTC-260923-80000-C')
+        except Exception:
+            pass
+    return 'BTC-260923-80000-C'
+
+def fetch_binance_option(symbol):
     req = urllib.request.Request(
-        'https://eapi.binance.com/eapi/v1/ticker?symbol=BTC-260923-80000-C',
+        f'https://eapi.binance.com/eapi/v1/ticker?symbol={symbol}',
         headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     )
     with urllib.request.urlopen(req, timeout=5) as r:
         return json.loads(r.read().decode())[0]
 
 async def run_binance():
-    print("Starting Binance Live BTC Options Gateway (BTC-260923-80000-C)")
+    symbol = load_crypto_contract()
+    print(f"Starting Binance Live Options Gateway ({symbol})")
     seq = 1
     loop = asyncio.get_running_loop()
     while True:
         try:
-            tick = await loop.run_in_executor(None, fetch_binance_option)
+            tick = await loop.run_in_executor(None, fetch_binance_option, symbol)
             ts = time.time_ns()
 
             if 'bidPrice' in tick and 'askPrice' in tick:

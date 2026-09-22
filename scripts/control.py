@@ -407,10 +407,18 @@ def cmd_monitor():
     except KeyboardInterrupt:
         print(f"\n{YELLOW}Stopped live streaming monitor.{RESET}")
 
-def cmd_tui():
+def cmd_tui(extra_args=None):
     """Launches full-scale Bloomberg terminal TUI dual-pane interface."""
     import bloomberg_tui
-    bloomberg_tui.run_tui()
+    start_in_sel = True
+    if extra_args and "--no-select" in extra_args:
+        start_in_sel = False
+    bloomberg_tui.run_tui(start_in_select=start_in_sel)
+
+def cmd_select(extra_args=None):
+    """Launches interactive options contract discovery and dynamic selector inside TUI."""
+    import bloomberg_tui
+    bloomberg_tui.run_tui(start_in_select=True)
 
 def main():
     parser = argparse.ArgumentParser(description="Central Gateway & Arbitrage Infrastructure Controller")
@@ -429,9 +437,12 @@ def main():
     subparsers.add_parser("query", help="Show live KDB+ table counts and cross-exchange prices")
     subparsers.add_parser("benchmark", help="Display cycle-accurate latency benchmarks from C++ engine")
     subparsers.add_parser("monitor", help="Continuously stream live cross-venue arbitrage matrix")
-    subparsers.add_parser("tui", help="Launch full-scale Bloomberg-style dual-pane TUI monitor")
+    p_tui = subparsers.add_parser("tui", help="Launch full-scale Bloomberg-style dual-pane TUI monitor")
+    p_tui.add_argument("tui_args", nargs="*", default=[])
+    p_select = subparsers.add_parser("select", help="Interactive contract discovery & selector (Crypto & Equity)")
+    p_select.add_argument("select_args", nargs="*", default=[])
 
-    args = parser.parse_args()
+    args, unknown = parser.parse_known_args()
 
     if args.action == "start":
         cmd_start(args.targets)
@@ -448,7 +459,9 @@ def main():
     elif args.action == "monitor":
         cmd_monitor()
     elif args.action == "tui":
-        cmd_tui()
+        cmd_tui(args.tui_args + unknown)
+    elif args.action == "select":
+        cmd_select(args.select_args + unknown)
     else:
         cmd_status()
 

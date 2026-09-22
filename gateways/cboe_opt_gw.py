@@ -12,24 +12,46 @@ from protocol import ITCH_ADD_ORDER_FMT, MCAST_IP, PORT_CBOE_OPT
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
 
-def fetch_cboe_spy():
-    url = "https://cdn.cboe.com/api/global/delayed_quotes/options/SPY.json"
+def load_equity_contract():
+    cfg_path = os.path.join(os.path.dirname(__file__), 'active_contracts.json')
+    if os.path.exists(cfg_path):
+        try:
+            with open(cfg_path) as f:
+                eq = json.load(f).get('equity', {})
+                cboe_opt = eq.get('cboe_option', 'SPY260923C00791000')
+                underlying = eq.get('underlying', 'SPY')
+                strike = float(eq.get('strike', 791.0))
+                L = len(underlying)
+                if len(cboe_opt) >= L + 7:
+                    c_opt = cboe_opt[:L+6] + 'C' + cboe_opt[L+7:]
+                    p_opt = cboe_opt[:L+6] + 'P' + cboe_opt[L+7:]
+                else:
+                    c_opt = cboe_opt
+                    p_opt = cboe_opt
+                return underlying, c_opt, p_opt, strike
+        except Exception:
+            pass
+    return 'SPY', 'SPY260923C00791000', 'SPY260923P00791000', 791.0
+
+def fetch_cboe_options(underlying):
+    url = f"https://cdn.cboe.com/api/global/delayed_quotes/options/{underlying}.json"
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64)'})
     with urllib.request.urlopen(req, timeout=12) as resp:
         return json.loads(resp.read().decode())['data']
 
 async def run_cboe():
-    print("Starting CBOE Equity Options Gateway (SPY Options Chain)")
+    underlying, target_call, target_put_name, strike_val = load_equity_contract()
+    print(f"Starting CBOE Equity Options Gateway ({underlying} - {target_call})")
     seq = 1
     last_contract = None
     loop = asyncio.get_running_loop()
     backoff = 3.0
     while True:
         try:
-            data = await loop.run_in_executor(None, fetch_cboe_spy)
+            data = await loop.run_in_executor(None, fetch_cboe_options, underlying)
             options = data.get('options', [])
-            target = [o for o in options if o.get('option') == 'SPY260923C00791000']
-            target_put = [o for o in options if o.get('option') == 'SPY260923P00791000']
+            target = [o for o in options if o.get('option') == target_call]
+            target_put = [o for o in options if o.get('option') == target_put_name]
             spy_spot = float(data.get('current_price', 0.0))
 
             if target:
