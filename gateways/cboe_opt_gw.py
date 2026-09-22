@@ -29,6 +29,9 @@ async def run_cboe():
             data = await loop.run_in_executor(None, fetch_cboe_spy)
             options = data.get('options', [])
             target = [o for o in options if o.get('option') == 'SPY260923C00791000']
+            target_put = [o for o in options if o.get('option') == 'SPY260923P00791000']
+            spy_spot = float(data.get('current_price', 0.0))
+
             if target:
                 last_contract = target[0]
                 # Save live quant analytics for contract
@@ -48,6 +51,26 @@ async def run_cboe():
                             'volume': float(last_contract.get('volume', 0)),
                             'open_interest': float(last_contract.get('open_interest', 0))
                         }, qf)
+                except Exception:
+                    pass
+
+            if target and target_put:
+                c_c = target[0]
+                p_c = target_put[0]
+                try:
+                    ppath = os.path.join(os.path.dirname(__file__), 'cboe_parity.json')
+                    with open(ppath, 'w') as pf:
+                        json.dump({
+                            'spot': spy_spot,
+                            'strike': 791.0,
+                            'call_bid': float(c_c.get('bid', 0)),
+                            'call_ask': float(c_c.get('ask', 0)),
+                            'call_theo': float(c_c.get('theo', 0)),
+                            'put_bid': float(p_c.get('bid', 0)),
+                            'put_ask': float(p_c.get('ask', 0)),
+                            'put_theo': float(p_c.get('theo', 0)),
+                            'put_iv': float(p_c.get('iv', 0)),
+                        }, pf)
                 except Exception:
                     pass
             backoff = 3.0
