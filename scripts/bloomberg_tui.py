@@ -48,11 +48,32 @@ def generate_sparkline(values, max_len: int = 24) -> str:
         res.append(SPARK_CHARS[idx])
     return "".join(res)
 
-def make_queue_bars(b_sz: int, a_sz: int, width: int = 5):
+def fmt_sz(sz: int) -> str:
+    """Formats contract size with compact notation to prevent line wrapping."""
+    if sz >= 1_000_000:
+        return f"{sz / 1_000_000:.1f}M"
+    if sz >= 10_000:
+        return f"{sz / 1_000:.0f}K"
+    if sz >= 1_000:
+        return f"{sz / 1_000:.1f}K"
+    return str(sz)
+
+def format_strike_compact(s: float) -> str:
+    """Formats option strike compactly to fit into terminal tables without wrapping."""
+    if s >= 1000:
+        val = s / 1000.0
+        return f"{val:.0f}k" if val.is_integer() else f"{val:.2f}k".rstrip('0').rstrip('.')
+    if s >= 100:
+        return f"{s:.0f}"
+    if s >= 10:
+        return f"{s:.1f}" if not s.is_integer() else f"{s:.0f}"
+    return f"{s:.2f}"
+
+def make_queue_bars(b_sz: int, a_sz: int, width: int = 4):
     """Calculates normalized bid/ask queue thickness bars and order book imbalance."""
     tot = b_sz + a_sz
     if tot <= 0:
-        return "░" * width, "░" * width, "0% BAL", "dim"
+        return "░" * width, "░" * width, "0% BAL", "#64748b"
     b_ratio = b_sz / tot
     a_ratio = a_sz / tot
     b_fill = max(1 if b_sz > 0 else 0, int(round(b_ratio * width)))
@@ -63,13 +84,13 @@ def make_queue_bars(b_sz: int, a_sz: int, width: int = 5):
     imb = int(((b_sz - a_sz) / tot) * 100)
     if imb > 20:
         imb_str = f"+{imb}% BID"
-        style = "bold green"
+        style = "bold #4ade80"
     elif imb < -20:
         imb_str = f"{imb}% ASK"
-        style = "bold red"
+        style = "bold #f87171"
     else:
         imb_str = f"{imb}% BAL"
-        style = "yellow"
+        style = "#fbbf24"
     return b_bar, a_bar, imb_str, style
 
 def load_greeks():
@@ -129,29 +150,50 @@ def restart_gateways_bg():
         pass
 
 def get_key_nonblocking():
-    """Reads a single keypress or escape sequence without blocking terminal execution."""
+    """Reads a single keypress or ANSI escape sequence without blocking."""
     if not sys.stdin.isatty():
         return None
     rlist, _, _ = select.select([sys.stdin], [], [], 0)
-    if rlist:
-        ch = sys.stdin.read(1)
-        if ch == '\x1b':
-            # Check for escape sequence (arrow keys)
-            rlist2, _, _ = select.select([sys.stdin], [], [], 0.05)
-            if rlist2:
-                ch2 = sys.stdin.read(1)
-                if ch2 == '[':
-                    rlist3, _, _ = select.select([sys.stdin], [], [], 0.05)
-                    if rlist3:
-                        ch3 = sys.stdin.read(1)
-                        if ch3 == 'A': return 'UP'
-                        elif ch3 == 'B': return 'DOWN'
-                        elif ch3 == 'C': return 'RIGHT'
-                        elif ch3 == 'D': return 'LEFT'
-                return 'ESC'
+    if not rlist:
+        return None
+    try:
+        raw = os.read(sys.stdin.fileno(), 32)
+    except Exception:
+        return None
+    if not raw:
+        return None
+
+    # Check for escape sequences
+    if raw.startswith(b'\x1b'):
+        if len(raw) == 1:
+            # Check if trailing bytes of arrow key or escape sequence are arriving immediately
+            r2, _, _ = select.select([sys.stdin], [], [], 0.05)
+            if r2:
+                try:
+                    more = os.read(sys.stdin.fileno(), 31)
+                    raw += more
+                except Exception:
+                    pass
+        if len(raw) == 1:
             return 'ESC'
-        return ch
-    return None
+        # Arrow keys (standard ANSI and application cursor mode)
+        if raw in [b'\x1b[A', b'\x1bOA', b'\x1b[1;2A', b'\x1b[1;5A']: return 'UP'
+        if raw in [b'\x1b[B', b'\x1bOB', b'\x1b[1;2B', b'\x1b[1;5B']: return 'DOWN'
+        if raw in [b'\x1b[C', b'\x1bOC', b'\x1b[1;2C', b'\x1b[1;5C']: return 'RIGHT'
+        if raw in [b'\x1b[D', b'\x1bOD', b'\x1b[1;2D', b'\x1b[1;5D']: return 'LEFT'
+        if raw == b'\x1b[Z': return 'BACKTAB'
+        if len(raw) >= 3 and raw[1:2] in [b'[', b'O']:
+            ch = raw[-1:]
+            if ch == b'A': return 'UP'
+            if ch == b'B': return 'DOWN'
+            if ch == b'C': return 'RIGHT'
+            if ch == b'D': return 'LEFT'
+        return 'ESC'
+
+    try:
+        return raw.decode('utf-8', errors='ignore')
+    except Exception:
+        return None
 
 def parse_latency_benchmark():
     """Parses live genuine hardware cycle latency percentiles from logs/latency_benchmark.txt."""
@@ -305,15 +347,15 @@ def render_selection_header() -> Panel:
     grid.add_column(justify="center", ratio=2)
     grid.add_column(justify="right", ratio=1)
 
-    title = Text("OMON <GO>  |  CONTRACT SELECTION MATRIX", style="bold yellow")
+    title = Text("OMON <GO>  |  CONTRACT SELECTION MATRIX", style="bold #e5a93b")
     mid_info = Text.assemble(
-        ("SOURCE: ", "dim"), ("Live Exchange APIs (Deribit / OKX / Binance / CBOE / OPRA)  ", "bold cyan"),
-        ("DATA: ", "dim"), ("100% Genuine (Zero Hardcoding)", "bold green"),
+        ("SOURCE: ", "#64748b"), ("Live Exchange APIs (Deribit / OKX / Binance / CBOE / OPRA)  ", "#38bdf8"),
+        ("DATA: ", "#64748b"), ("100% Genuine (Zero Hardcoding)", "bold #4ade80"),
     )
     now_str = time.strftime("%Y-%m-%d %H:%M:%S UTC")
-    right_info = Text(now_str, style="bold yellow")
+    right_info = Text(now_str, style="#fbbf24")
     grid.add_row(title, mid_info, right_info)
-    return Panel(grid, style="on black", border_style="yellow")
+    return Panel(grid, style="on black", border_style="#5c5040")
 
 def render_selection_crypto(catalog: dict, sel_c_idx: int, sel_c_strike_idx: int, active_side: str) -> Panel:
     crypto_cat = catalog.get('crypto', {})
@@ -323,12 +365,12 @@ def render_selection_crypto(catalog: dict, sel_c_idx: int, sel_c_strike_idx: int
     for idx, u in enumerate(CRYPTO_UNDERLYINGS):
         u_info = crypto_cat.get(u, {})
         u_spot = u_info.get('spot', 0.0)
-        spot_str = f"${u_spot:,.2f}" if u in ["BTC", "ETH"] else f"${u_spot:.2f}"
+        spot_str = f"${u_spot/1000:.1f}k" if u_spot >= 1000 else f"${u_spot:.2f}"
         if idx == sel_c_idx:
-            tabs.append((f" [{idx+1}] {u} ({spot_str}) ", "bold black on cyan"))
+            tabs.append((f" [{idx+1}] {u} ({spot_str}) ", "bold #ffffff on #1e3a5f"))
         else:
-            tabs.append((f" [{idx+1}] {u} ({spot_str}) ", "dim"))
-        tabs.append(("  ", ""))
+            tabs.append((f" [{idx+1}] {u} ({spot_str}) ", "dim #94a3b8"))
+        tabs.append((" ", ""))
     tabs_text = Text.assemble(*tabs)
     
     # 2. Table of 5 contracts for selected underlying
@@ -336,12 +378,12 @@ def render_selection_crypto(catalog: dict, sel_c_idx: int, sel_c_strike_idx: int
     contracts = crypto_cat.get(curr, {}).get('contracts', [])
     
     t = Table(expand=True, box=None, padding=(0, 1))
-    t.add_column("KEY", no_wrap=True)
-    t.add_column("EXPIRY", style="white")
-    t.add_column("STRIKE", justify="right", style="bold green")
-    t.add_column("TYPE", justify="center", style="cyan")
-    t.add_column("DERIBIT INSTRUMENT", style="bold white")
-    t.add_column("STATUS", justify="right")
+    t.add_column("KEY", justify="center", no_wrap=True)
+    t.add_column("EXPIRY", justify="center", style="#94a3b8", no_wrap=True)
+    t.add_column("STRIKE", justify="right", style="bold #4ade80", no_wrap=True)
+    t.add_column("TYPE", justify="center", style="#38bdf8", no_wrap=True)
+    t.add_column("INSTRUMENT", style="#e2e8f0", no_wrap=True)
+    t.add_column("STATUS", justify="right", no_wrap=True)
     
     key_letters = ['a', 'b', 'c', 'd', 'e']
     for i, c in enumerate(contracts[:5]):
@@ -350,52 +392,53 @@ def render_selection_crypto(catalog: dict, sel_c_idx: int, sel_c_strike_idx: int
         stk_str = f"${stk_val:,.2f}" if curr in ["BTC", "ETH"] else f"${stk_val:.2f}"
         is_sel = (i == sel_c_strike_idx)
         
-        key_display = Text(f"[{key_char}]", style="bold green" if is_sel else "yellow")
-        status = Text("► SELECTED", style="bold green") if is_sel else Text("Available", style="dim")
+        key_display = Text(f"[{key_char}]", style="bold #4ade80" if is_sel else "bold #fbbf24")
+        status = Text("► ACTIVE", style="bold #4ade80") if is_sel else Text("Available", style="#64748b")
+        inst_label = c.get('deribit_instrument', '--')
             
         t.add_row(
             key_display,
             c.get('expiry', '--'),
             stk_str,
             f"{c.get('call_put', 'C')} (CALL)",
-            c.get('deribit_instrument', '--'),
+            inst_label,
             status,
-            style="bold green" if is_sel else None
+            style="bold #4ade80" if is_sel else None
         )
         
     # 3. Overview of all 5 cryptos with all discovered strikes
     matrix_table = Table(expand=True, box=None, padding=(0, 1))
-    matrix_table.add_column("ASSET", style="bold cyan", no_wrap=True)
-    matrix_table.add_column("SPOT", justify="right", style="dim")
-    matrix_table.add_column("EXPIRY", style="dim")
-    matrix_table.add_column("DISCOVERED NEAR-THE-MONEY STRIKES", style="bold white")
+    matrix_table.add_column("ASSET", style="bold #38bdf8", no_wrap=True)
+    matrix_table.add_column("SPOT", justify="right", style="#94a3b8", no_wrap=True)
+    matrix_table.add_column("EXPIRY", justify="center", style="#64748b", no_wrap=True)
+    matrix_table.add_column("DISCOVERED NEAR-THE-MONEY STRIKES", style="#e2e8f0", no_wrap=True)
     
     for idx, u in enumerate(CRYPTO_UNDERLYINGS):
         u_info = crypto_cat.get(u, {})
         u_spot = u_info.get('spot', 0.0)
         u_exp = u_info.get('expiry', '--')
         u_contracts = u_info.get('contracts', [])
-        stk_list = [f"${c['strike']:,.0f}" if c['strike'] >= 100 else f"${c['strike']:.2f}" for c in u_contracts]
-        stk_summary = "  |  ".join(stk_list) if stk_list else "Loading..."
+        stk_list = [format_strike_compact(c['strike']) for c in u_contracts]
+        stk_summary = "  ".join(stk_list) if stk_list else "Loading..."
         asset_label = f"[{idx+1}] {u}" + (" ◄" if idx == sel_c_idx else "")
-        spot_fmt = f"${u_spot:,.2f}" if u in ["BTC", "ETH"] else f"${u_spot:.2f}"
+        spot_fmt = f"${u_spot/1000:.1f}k" if u_spot >= 1000 else f"${u_spot:.2f}"
         matrix_table.add_row(asset_label, spot_fmt, u_exp, stk_summary)
 
     content = Table.grid(expand=True)
     content.add_column()
-    content.add_row(Text("1. SELECT CRYPTOCURRENCY ASSET ([1-5] to switch asset):", style="bold yellow"))
+    content.add_row(Text("1. SELECT CRYPTOCURRENCY ASSET ([1-5] to switch asset):", style="bold #e5a93b"))
     content.add_row(tabs_text)
-    content.add_row(Text("─" * 60, style="dim"))
-    content.add_row(Text(f"ACTIVE OPTIONS CONTRACTS FOR {curr} (Press [a-e] or Up/Down to choose):", style="bold cyan"))
+    content.add_row(Text("─" * 55, style="#1e3a5f"))
+    content.add_row(Text(f"ACTIVE OPTIONS CONTRACTS FOR {curr} (Press [a-e] or Up/Down):", style="bold #38bdf8"))
     content.add_row(t)
-    content.add_row(Text("─" * 60, style="dim"))
-    content.add_row(Text("ALL CRYPTO CONTRACTS CATALOG (5 ASSETS x 5 STRIKES):", style="bold yellow"))
+    content.add_row(Text("─" * 55, style="#1e3a5f"))
+    content.add_row(Text("ALL CRYPTO CONTRACTS CATALOG (5 ASSETS x 5 STRIKES):", style="bold #e5a93b"))
     content.add_row(matrix_table)
     
-    border = "bold cyan" if active_side == "crypto" else "dim cyan"
+    border = "#38bdf8" if active_side == "crypto" else "#1e3a5f"
     title = Text.assemble(
-        ("CRYPTO OPTIONS SELECTION MATRIX", "bold cyan"),
-        ("  [FOCUSED]" if active_side == "crypto" else "", "bold green")
+        ("CRYPTO OPTIONS SELECTION MATRIX", "bold #38bdf8"),
+        ("  [FOCUSED]" if active_side == "crypto" else "", "bold #4ade80")
     )
     return Panel(content, title=title, border_style=border)
 
@@ -410,10 +453,10 @@ def render_selection_equity(catalog: dict, sel_e_idx: int, sel_e_strike_idx: int
         u_spot = u_info.get('spot', 0.0)
         k = num_keys[idx]
         if idx == sel_e_idx:
-            tabs.append((f" [{k}] {u} (${u_spot:.2f}) ", "bold black on magenta"))
+            tabs.append((f" [{k}] {u} (${u_spot:.2f}) ", "bold #ffffff on #3b1d40"))
         else:
-            tabs.append((f" [{k}] {u} (${u_spot:.2f}) ", "dim"))
-        tabs.append(("  ", ""))
+            tabs.append((f" [{k}] {u} (${u_spot:.2f}) ", "dim #94a3b8"))
+        tabs.append((" ", ""))
     tabs_text = Text.assemble(*tabs)
     
     # 2. Table of 5 contracts for selected underlying
@@ -421,13 +464,13 @@ def render_selection_equity(catalog: dict, sel_e_idx: int, sel_e_strike_idx: int
     contracts = equity_cat.get(curr, {}).get('contracts', [])
     
     t = Table(expand=True, box=None, padding=(0, 1))
-    t.add_column("KEY", no_wrap=True)
-    t.add_column("EXPIRY", style="white")
-    t.add_column("STRIKE", justify="right", style="bold green")
-    t.add_column("CBOE OPTION", style="bold white")
-    t.add_column("BID / ASK", justify="center", style="cyan")
-    t.add_column("THEO", justify="right", style="magenta")
-    t.add_column("STATUS", justify="right")
+    t.add_column("KEY", justify="center", no_wrap=True)
+    t.add_column("EXPIRY", justify="center", style="#94a3b8", no_wrap=True)
+    t.add_column("STRIKE", justify="right", style="bold #4ade80", no_wrap=True)
+    t.add_column("OPTION", style="#e2e8f0", no_wrap=True)
+    t.add_column("BID / ASK", justify="center", style="#38bdf8", no_wrap=True)
+    t.add_column("THEO", justify="right", style="#c084fc", no_wrap=True)
+    t.add_column("STATUS", justify="right", no_wrap=True)
     
     key_letters = ['f', 'g', 'h', 'i', 'j']
     for i, c in enumerate(contracts[:5]):
@@ -437,55 +480,56 @@ def render_selection_equity(catalog: dict, sel_e_idx: int, sel_e_strike_idx: int
         ask = c.get('ask', 0.0)
         theo = c.get('theo', 0.0)
         ba_str = f"${bid:.2f} / ${ask:.2f}" if (bid > 0 or ask > 0) else "--"
-        theo_str = f"${theo:.4f}" if theo > 0 else "--"
+        theo_str = f"${theo:.2f}" if theo > 0 else "--"
         
-        key_display = Text(f"[{key_char}]", style="bold green" if is_sel else "yellow")
-        status = Text("► SELECTED", style="bold green") if is_sel else Text("Available", style="dim")
+        key_display = Text(f"[{key_char}]", style="bold #4ade80" if is_sel else "bold #fbbf24")
+        status = Text("► ACTIVE", style="bold #4ade80") if is_sel else Text("Available", style="#64748b")
+        opt_label = c.get('cboe_option', '--')
             
         t.add_row(
             key_display,
             c.get('expiry', '--'),
             f"${c['strike']:.2f}",
-            c.get('cboe_option', '--'),
+            opt_label,
             ba_str,
             theo_str,
             status,
-            style="bold green" if is_sel else None
+            style="bold #4ade80" if is_sel else None
         )
         
     # 3. Overview of all 5 equities with all discovered strikes
     matrix_table = Table(expand=True, box=None, padding=(0, 1))
-    matrix_table.add_column("ASSET", style="bold magenta", no_wrap=True)
-    matrix_table.add_column("SPOT", justify="right", style="dim")
-    matrix_table.add_column("EXPIRY", style="dim")
-    matrix_table.add_column("DISCOVERED NEAR-THE-MONEY STRIKES", style="bold white")
+    matrix_table.add_column("ASSET", style="bold #c084fc", no_wrap=True)
+    matrix_table.add_column("SPOT", justify="right", style="#94a3b8", no_wrap=True)
+    matrix_table.add_column("EXPIRY", justify="center", style="#64748b", no_wrap=True)
+    matrix_table.add_column("DISCOVERED NEAR-THE-MONEY STRIKES", style="#e2e8f0", no_wrap=True)
     
     for idx, u in enumerate(EQUITY_UNDERLYINGS):
         u_info = equity_cat.get(u, {})
         u_spot = u_info.get('spot', 0.0)
         u_exp = u_info.get('expiry', '--')
         u_contracts = u_info.get('contracts', [])
-        stk_list = [f"${c['strike']:.2f}" for c in u_contracts]
-        stk_summary = "  |  ".join(stk_list) if stk_list else "Loading..."
+        stk_list = [format_strike_compact(c['strike']) for c in u_contracts]
+        stk_summary = "  ".join(stk_list) if stk_list else "Loading..."
         k = num_keys[idx]
         asset_label = f"[{k}] {u}" + (" ◄" if idx == sel_e_idx else "")
         matrix_table.add_row(asset_label, f"${u_spot:.2f}", u_exp, stk_summary)
 
     content = Table.grid(expand=True)
     content.add_column()
-    content.add_row(Text("2. SELECT EQUITY ASSET ([6-0] to switch asset):", style="bold yellow"))
+    content.add_row(Text("2. SELECT EQUITY ASSET ([6-0] to switch asset):", style="bold #e5a93b"))
     content.add_row(tabs_text)
-    content.add_row(Text("─" * 60, style="dim"))
-    content.add_row(Text(f"ACTIVE OPTIONS CONTRACTS FOR {curr} (Press [f-j] or Up/Down to choose):", style="bold magenta"))
+    content.add_row(Text("─" * 55, style="#3d2b45"))
+    content.add_row(Text(f"ACTIVE OPTIONS CONTRACTS FOR {curr} (Press [f-j] or Up/Down):", style="bold #c084fc"))
     content.add_row(t)
-    content.add_row(Text("─" * 60, style="dim"))
-    content.add_row(Text("ALL EQUITY CONTRACTS CATALOG (5 ASSETS x 5 STRIKES):", style="bold yellow"))
+    content.add_row(Text("─" * 55, style="#3d2b45"))
+    content.add_row(Text("ALL EQUITY CONTRACTS CATALOG (5 ASSETS x 5 STRIKES):", style="bold #e5a93b"))
     content.add_row(matrix_table)
     
-    border = "bold magenta" if active_side == "equity" else "dim magenta"
+    border = "#c084fc" if active_side == "equity" else "#3d2b45"
     title = Text.assemble(
-        ("EQUITY OPTIONS SELECTION MATRIX", "bold magenta"),
-        ("  [FOCUSED]" if active_side == "equity" else "", "bold green")
+        ("EQUITY OPTIONS SELECTION MATRIX", "bold #c084fc"),
+        ("  [FOCUSED]" if active_side == "equity" else "", "bold #4ade80")
     )
     return Panel(content, title=title, border_style=border)
 
@@ -494,19 +538,19 @@ def render_selection_footer(active_side: str) -> Panel:
     grid.add_column(justify="left", ratio=1)
     grid.add_column(justify="right", ratio=1)
     left = Text.assemble(
-        ("KEYBOARD NAVIGATION: ", "dim"),
-        ("[Tab]/[Left/Right] Switch Pane  ", "bold white"),
-        ("[Up/Down] Pick Strike  ", "bold white"),
-        ("[1-5] Pick Crypto  ", "bold cyan"),
-        ("[6-0] Pick Equity  ", "bold magenta"),
+        ("KEYBOARD NAVIGATION: ", "#64748b"),
+        ("[Tab]/[Left/Right] Switch Pane  ", "bold #e2e8f0"),
+        ("[Up/Down] Pick Strike  ", "bold #e2e8f0"),
+        ("[1-5] Pick Crypto  ", "#38bdf8"),
+        ("[6-0] Pick Equity  ", "#c084fc"),
     )
     right = Text.assemble(
-        ("ACTION: ", "dim"),
-        ("[Enter] or [Space] CONFIRM & LAUNCH MONITOR  ", "bold green"),
-        ("[q] Exit", "bold red")
+        ("ACTION: ", "#64748b"),
+        ("[Enter] or [Space] CONFIRM & LAUNCH MONITOR  ", "bold #4ade80"),
+        ("[q] Exit", "#f87171")
     )
     grid.add_row(left, right)
-    return Panel(grid, style="on black", border_style="yellow")
+    return Panel(grid, style="on black", border_style="#5c5040")
 
 def render_header(total_ticks: int) -> Panel:
     now_str = time.strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -515,18 +559,18 @@ def render_header(total_ticks: int) -> Panel:
     grid.add_column(justify="center", ratio=2)
     grid.add_column(justify="right", ratio=1)
 
-    title = Text("OMON <GO>  |  CROSS-VENUE ARBITRAGE & QUANT MONITOR", style="bold yellow")
+    title = Text("OMON <GO>  |  CROSS-VENUE ARBITRAGE & QUANT MONITOR", style="bold #e5a93b")
     mid_info = Text.assemble(
-        ("INGRESS: ", "dim"), ("AF_XDP (Kernel Bypass)  ", "bold green"),
-        ("CPU: ", "dim"), ("Core 2 (Pinned)  ", "bold cyan"),
-        ("FEED: ", "dim"), ("UDP Multicast (5000-5005)", "bold white"),
+        ("INGRESS: ", "#64748b"), ("AF_XDP (Kernel Bypass)  ", "bold #4ade80"),
+        ("CPU: ", "#64748b"), ("Core 2 (Pinned)  ", "#38bdf8"),
+        ("FEED: ", "#64748b"), ("UDP Multicast (5000-5005)", "#94a3b8"),
     )
     right_info = Text.assemble(
-        ("TICKS: ", "dim"), (f"{total_ticks:,}  ", "bold green"),
-        (now_str, "bold yellow")
+        ("TICKS: ", "#64748b"), (f"{total_ticks:,}  ", "bold #4ade80"),
+        (now_str, "#fbbf24")
     )
     grid.add_row(title, mid_info, right_info)
-    return Panel(grid, style="on black", border_style="yellow")
+    return Panel(grid, style="on black", border_style="#5c5040")
 
 def render_crypto_panel(data: dict, greeks: dict, parity: dict, cfg: dict = None, view_mode: str = "split") -> Panel:
     btc = data['btc']
@@ -539,15 +583,16 @@ def render_crypto_panel(data: dict, greeks: dict, parity: dict, cfg: dict = None
     strike = float(crypto_cfg.get('strike', 80000.0))
     cp_type = crypto_cfg.get('call_put', 'C')
     type_str = "Call" if cp_type == 'C' else "Put"
+    strike_fmt = f"${strike:,.2f}" if strike < 100 else f"${strike:,.0f}"
 
     # Visual Top-of-Book Depth Ladder with Imbalance
     table = Table(expand=True, box=None, padding=(0, 1))
-    table.add_column("VENUE", style="bold cyan", no_wrap=True)
-    table.add_column("BID ($)", justify="right", style="bold green")
-    table.add_column("QUEUE", justify="center")
-    table.add_column("ASK ($)", justify="right", style="bold red")
-    table.add_column("QUEUE", justify="center")
-    table.add_column("IMB", justify="right")
+    table.add_column("VENUE", style="bold #38bdf8", no_wrap=True)
+    table.add_column("BID ($)", justify="right", style="bold #4ade80", no_wrap=True)
+    table.add_column("QUEUE", justify="center", no_wrap=True)
+    table.add_column("ASK ($)", justify="right", style="bold #f87171", no_wrap=True)
+    table.add_column("QUEUE", justify="center", no_wrap=True)
+    table.add_column("IMB", justify="right", no_wrap=True)
 
     venues = [("DERIBIT", "DERIBIT_OPT"), ("OKX", "OKX_OPT"), ("BINANCE", "BINANCE_OPT")]
     for label, key in venues:
@@ -563,9 +608,9 @@ def render_crypto_panel(data: dict, greeks: dict, parity: dict, cfg: dict = None
         table.add_row(
             label,
             b_str,
-            f"[green]{b_bar}[/green] ({bsz:,})",
+            f"[#4ade80]{b_bar}[/] ({fmt_sz(bsz)})",
             a_str,
-            f"[red]{a_bar}[/red] ({asz:,})",
+            f"[#f87171]{a_bar}[/] ({fmt_sz(asz)})",
             f"[{imb_style}]{imb_str}[/{imb_style}]"
         )
 
@@ -584,31 +629,30 @@ def render_crypto_panel(data: dict, greeks: dict, parity: dict, cfg: dict = None
             bps = (diff / mid) * 10000.0 if mid > 0 else 0
             f1, f2 = FEE_RATES[v1_key], FEE_RATES[v2_key]
 
-            # Directional cross check
-            status = "[dim]Normal Market (Fee Drag Bound)[/dim]"
+            status = "[#64748b]Fee Bound[/]"
             if a2 is not None and b1 > a2:
                 gross = b1 - a2
                 fees = (a2 * f2) + (b1 * f1)
                 net = gross - fees
                 if net > 0:
-                    status = f"[bold green]ARB: Net +${net:.2f} (Fee Cleared)[/bold green]"
+                    status = f"[bold #4ade80]ARB: +${net:.2f}[/]"
                 else:
-                    status = f"[dim]Fee Drag (Gross +${gross:.2f}, Net -${abs(net):.2f})[/dim]"
+                    status = f"[#64748b]Drag (-${abs(net):.2f})[/]"
             elif a1 is not None and b2 > a1:
                 gross = b2 - a1
                 fees = (a1 * f1) + (b2 * f2)
                 net = gross - fees
                 if net > 0:
-                    status = f"[bold green]ARB: Net +${net:.2f} (Fee Cleared)[/bold green]"
+                    status = f"[bold #4ade80]ARB: +${net:.2f}[/]"
                 else:
-                    status = f"[dim]Fee Drag (Gross +${gross:.2f}, Net -${abs(net):.2f})[/dim]"
+                    status = f"[#64748b]Drag (-${abs(net):.2f})[/]"
 
-            return f"{name:<18} Diff: [bold white]${diff:.2f}[/bold white] ({bps:.1f} bps)  {status}"
-        return f"{name:<18} [dim]Awaiting Feed[/dim]"
+            return f"{name:<15} Diff: [#f1f5f9]${diff:.2f}[/] ({bps:.1f} bps)  {status}"
+        return f"{name:<15} [#64748b]Awaiting Feed[/]"
 
-    arb1 = arb_line("1. OKX vs DERIBIT", "OKX", "OKX_OPT", "DERIBIT", "DERIBIT_OPT")
-    arb2 = arb_line("2. BINANCE vs OKX", "BINANCE", "BINANCE_OPT", "OKX", "OKX_OPT")
-    arb3 = arb_line("3. BINANCE vs DERIBIT", "BINANCE", "BINANCE_OPT", "DERIBIT", "DERIBIT_OPT")
+    arb1 = arb_line("1. OKX-DERIBIT", "OKX", "OKX_OPT", "DERIBIT", "DERIBIT_OPT")
+    arb2 = arb_line("2. BINANCE-OKX", "BINANCE", "BINANCE_OPT", "OKX", "OKX_OPT")
+    arb3 = arb_line("3. BINANCE-DERI", "BINANCE", "BINANCE_OPT", "DERIBIT", "DERIBIT_OPT")
 
     # Real-time Unicode Sparklines (Phase 2)
     btc_spark = generate_sparkline(history.btc_deribit_bid, max_len=24)
@@ -644,57 +688,61 @@ def render_crypto_panel(data: dict, greeks: dict, parity: dict, cfg: dict = None
     fee_bound = d_fwd * 0.0006  # 6 bps roundtrip taker fee
     conversion_edge = abs(discrepancy) - fee_bound
     if conversion_edge > 0 and (c_mid > 0 and p_mid > 0):
-        parity_status = f"[bold green]SYNTH ARB: +${conversion_edge:.2f} edge[/bold green]"
+        parity_status_text = Text(f"SYNTH ARB: +${conversion_edge:.2f}", style="bold #4ade80")
     else:
-        parity_status = f"[dim]Box Bounded (Fee Drag ${fee_bound:.2f})[/dim]"
+        parity_status_text = Text(f"Box Bound (${fee_bound:.2f})", style="#64748b")
 
     content = Table.grid(expand=True)
     content.add_column()
-    content.add_row(Text(f"{underlying} OPTIONS: {inst_name} (Strike ${strike:,.0f} {type_str})", style="bold yellow"))
-    content.add_row(Text(f"Underlier: ${spot:,.2f} | Moneyness: {moneyness_str} | Intrinsic: ${intrinsic:,.2f}", style="dim"))
-    content.add_row(Text("─" * 60, style="dim"))
+    content.add_row(Text(f"{underlying} OPTIONS: {inst_name} (Strike {strike_fmt} {type_str})", style="bold #e5a93b"))
+    content.add_row(Text(f"Underlier: ${spot:,.2f} | Moneyness: {moneyness_str} | Intrinsic: ${intrinsic:,.2f}", style="#94a3b8"))
+    content.add_row(Text("─" * 55, style="#1e3a5f"))
     content.add_row(table)
-    content.add_row(Text("─" * 60, style="dim"))
-    content.add_row(Text(f"CROSS-VENUE ARBITRAGES ({underlying} OPTIONS)", style="bold yellow"))
+    content.add_row(Text("─" * 55, style="#1e3a5f"))
+    content.add_row(Text(f"CROSS-VENUE ARBITRAGES ({underlying} OPTIONS)", style="bold #e5a93b"))
     content.add_row(Text.from_markup(f"  • {arb1}"))
     content.add_row(Text.from_markup(f"  • {arb2}"))
     content.add_row(Text.from_markup(f"  • {arb3}"))
-    content.add_row(Text("─" * 60, style="dim"))
-    content.add_row(Text("REAL-TIME GREEKS & VOLATILITY (DERIBIT LIVE FEED)", style="bold yellow"))
+    content.add_row(Text("─" * 55, style="#1e3a5f"))
+    content.add_row(Text("REAL-TIME GREEKS & VOLATILITY (DERIBIT LIVE FEED)", style="bold #e5a93b"))
     content.add_row(Text.assemble(
-        ("  • Implied Vol (IV): ", "dim"), (f"{iv:.2f}%  ", "bold cyan"),
-        ("Delta (Δ): ", "dim"), (f"{delta:.4f}  ", "bold green"),
-        ("Gamma (Γ): ", "dim"), (f"{gamma:.4f}", "bold green")
+        ("  • IV: ", "#64748b"), (f"{iv:.2f}%  ", "bold #38bdf8"),
+        ("|  Δ: ", "#64748b"), (f"{delta:.4f}  ", "bold #4ade80"),
+        ("|  Γ: ", "#64748b"), (f"{gamma:.4f}", "bold #4ade80")
+    ))
+    time_val_str = f"${(d_bid - intrinsic):.2f}" if (d_bid is not None and d_bid >= intrinsic) else "--"
+    content.add_row(Text.assemble(
+        ("  • Vega (ν): ", "#64748b"), (f"{vega:.4f}  ", "#c084fc"),
+        ("|  Theta (θ): ", "#64748b"), (f"${theta:.2f}/d  ", "#f87171"),
+        ("|  TV: ", "#64748b"), (time_val_str, "#fbbf24")
+    ))
+    content.add_row(Text("─" * 55, style="#1e3a5f"))
+    content.add_row(Text("PUT-CALL PARITY & SYNTHETIC BASIS (DERIBIT LIVE)", style="bold #e5a93b"))
+    content.add_row(Text.assemble(
+        ("  • Fwd: ", "#64748b"), (f"${synth_fwd:,.2f}  ", "bold #f1f5f9"),
+        ("Spot: ", "#64748b"), (f"${d_spot:,.2f}  ", "#38bdf8"),
+        ("Basis: ", "#64748b"), (f"{'+' if basis >= 0 else ''}${basis:.2f} ({basis_bps:+.1f} bps)", "#fbbf24")
+    ))
+    c_p_diff = c_mid - p_mid
+    f_k_diff = d_fwd - strike
+    content.add_row(Text.assemble(
+        ("  • C-P: ", "#64748b"), (f"${c_p_diff:,.2f}  ", "bold #f1f5f9"),
+        ("vs F-K: ", "#64748b"), (f"${f_k_diff:,.2f}  ", "#94a3b8"),
+        ("Δ: ", "#64748b"), (f"{'+' if discrepancy >= 0 else ''}${discrepancy:.2f}  ", "bold #4ade80" if conversion_edge > 0 else "#64748b"),
+        (parity_status_text)
+    ))
+    content.add_row(Text("─" * 55, style="#1e3a5f"))
+    content.add_row(Text("TICK MOMENTUM SPARKLINE (24 Ticks)", style="bold #e5a93b"))
+    content.add_row(Text.assemble(
+        ("  • Deribit: ", "#64748b"), (f"[{btc_spark}] ", "#38bdf8"), (range_str, "#64748b")
     ))
     content.add_row(Text.assemble(
-        ("  • Vega (ν):        ", "dim"), (f"{vega:.4f}  ", "bold magenta"),
-        ("Theta (Θ): ", "dim"), (f"${theta:.2f}/day  ", "bold red"),
-        ("Time Val: ", "dim"), (f"${(d_bid - intrinsic):.2f}" if d_bid else "--", "yellow")
-    ))
-    content.add_row(Text("─" * 60, style="dim"))
-    content.add_row(Text("PUT-CALL PARITY & SYNTHETIC BASIS (DERIBIT LIVE)", style="bold yellow"))
-    content.add_row(Text.assemble(
-        ("  • Synthetic Fwd: ", "dim"), (f"${synth_fwd:,.2f}  ", "bold white"),
-        ("Index Spot: ", "dim"), (f"${d_spot:,.2f}  ", "bold cyan"),
-        ("Basis: ", "dim"), (f"{'+' if basis >= 0 else ''}${basis:.2f} ({basis_bps:+.1f} bps)", "yellow")
-    ))
-    content.add_row(Text.assemble(
-        ("  • Parity Spread: ", "dim"), (f"C - P = ${c_mid - p_mid:,.2f} vs F - K = ${d_fwd - strike:,.2f}  ", "bold white"),
-        ("Δ: ", "dim"), (f"{'+' if discrepancy >= 0 else ''}${discrepancy:.2f}  ", "bold green" if conversion_edge > 0 else "dim"),
-        (parity_status, "")
-    ))
-    content.add_row(Text("─" * 60, style="dim"))
-    content.add_row(Text("TICK MOMENTUM SPARKLINE (24 Ticks)", style="bold yellow"))
-    content.add_row(Text.assemble(
-        ("  • Deribit Bid: ", "dim"), (f"[{btc_spark}] ", "bold cyan"), (range_str, "dim")
-    ))
-    content.add_row(Text.assemble(
-        ("  • OKX-Deribit: ", "dim"), (f"[{arb_spark}] ", "bold green"), (last_arb, "dim")
+        ("  • Arb:     ", "#64748b"), (f"[{arb_spark}] ", "#4ade80"), (last_arb, "#64748b")
     ))
 
-    btn_markup = "[bold yellow][[b] SPLIT 50/50][/bold yellow]" if view_mode == "crypto" else "[bold yellow][[c] EXPAND 100%][/bold yellow]"
-    title_str = f"[bold cyan]{underlying} CRYPTOCURRENCY DERIVATIVES BOOK[/bold cyan]   {btn_markup}"
-    return Panel(content, title=title_str, border_style="cyan")
+    btn_markup = "[#fbbf24][[b] SPLIT][/]" if view_mode == "crypto" else "[#fbbf24][[c] EXPAND][/]"
+    title_str = f"[bold #38bdf8]{underlying} CRYPTOCURRENCY DERIVATIVES BOOK[/]   {btn_markup}"
+    return Panel(content, title=title_str, border_style="#38bdf8")
 
 def render_equity_panel(data: dict, greeks: dict, parity: dict, cfg: dict = None, view_mode: str = "split") -> Panel:
     spy = data['spy']
@@ -707,15 +755,16 @@ def render_equity_panel(data: dict, greeks: dict, parity: dict, cfg: dict = None
     strike = float(equity_cfg.get('strike', 791.0))
     cp_type = equity_cfg.get('call_put', 'C')
     type_str = "Call" if cp_type == 'C' else "Put"
+    strike_fmt = f"${strike:,.2f}" if strike < 100 else f"${strike:,.0f}"
 
     # Visual Top-of-Book Depth Ladder with Imbalance
     table = Table(expand=True, box=None, padding=(0, 1))
-    table.add_column("VENUE", style="bold magenta", no_wrap=True)
-    table.add_column("BID ($)", justify="right", style="bold green")
-    table.add_column("QUEUE", justify="center")
-    table.add_column("ASK ($)", justify="right", style="bold red")
-    table.add_column("QUEUE", justify="center")
-    table.add_column("IMB", justify="right")
+    table.add_column("VENUE", style="bold #c084fc", no_wrap=True)
+    table.add_column("BID ($)", justify="right", style="bold #4ade80", no_wrap=True)
+    table.add_column("QUEUE", justify="center", no_wrap=True)
+    table.add_column("ASK ($)", justify="right", style="bold #f87171", no_wrap=True)
+    table.add_column("QUEUE", justify="center", no_wrap=True)
+    table.add_column("IMB", justify="right", no_wrap=True)
 
     venues = [("CBOE", "CBOE_OPT"), ("NASDAQ", "NASDAQ_OPT"), ("OPRA", "OPRA_OPT")]
     for label, key in venues:
@@ -731,9 +780,9 @@ def render_equity_panel(data: dict, greeks: dict, parity: dict, cfg: dict = None
         table.add_row(
             label,
             b_str,
-            f"[green]{b_bar}[/green] ({bsz:,})",
+            f"[#4ade80]{b_bar}[/] ({fmt_sz(bsz)})",
             a_str,
-            f"[red]{a_bar}[/red] ({asz:,})",
+            f"[#f87171]{a_bar}[/] ({fmt_sz(asz)})",
             f"[{imb_style}]{imb_str}[/{imb_style}]"
         )
 
@@ -745,16 +794,16 @@ def render_equity_panel(data: dict, greeks: dict, parity: dict, cfg: dict = None
         if b1 is not None and b2 is not None:
             b_diff = abs(b1 - b2)
             a_diff = abs(a1 - a2) if (a1 is not None and a2 is not None) else 0.0
-            return f"{name:<18} NBBO Bid Diff: [bold white]${b_diff:.2f}[/bold white] | Ask Diff: [bold white]${a_diff:.2f}[/bold white]"
-        return f"{name:<18} [dim]Awaiting Feed[/dim]"
+            return f"{name:<15} BidΔ: [#f1f5f9]${b_diff:.2f}[/] | AskΔ: [#f1f5f9]${a_diff:.2f}[/]"
+        return f"{name:<15} [#64748b]Awaiting Feed[/]"
 
-    sp1 = spread_line("1. CBOE vs NASDAQ", c_b, n_b, c_a, n_a)
-    sp2 = spread_line("2. NASDAQ vs OPRA", n_b, p_b, n_a, p_a)
-    sp3 = spread_line("3. CBOE vs OPRA", c_b, p_b, c_a, p_a)
+    sp1 = spread_line("1. CBOE-NSDQ", c_b, n_b, c_a, n_a)
+    sp2 = spread_line("2. NSDQ-OPRA", n_b, p_b, n_a, p_a)
+    sp3 = spread_line("3. CBOE-OPRA", c_b, p_b, c_a, p_a)
 
     # Real-time Unicode Sparklines (Phase 2)
     spy_spark = generate_sparkline(history.spy_cboe_bid, max_len=24)
-    sp_spark = generate_sparkline(history.spy_nbbo_spread, max_len=24)
+    sp_spark = generate_sparkline(history.spy_nbBO_spread if hasattr(history, 'spy_nbBO_spread') else history.spy_nbbo_spread, max_len=24)
     last_width = f"Width: ${history.spy_nbbo_spread[-1]:.2f}" if history.spy_nbbo_spread else "Collecting..."
 
     # Phase 4: Greeks & Options Microstructure Matrix
@@ -780,66 +829,67 @@ def render_equity_panel(data: dict, greeks: dict, parity: dict, cfg: dict = None
     eq_discrepancy = s_synth - eq_spot
     eq_fee = 0.006  # ~0.6 cents per share clearing fee
     if abs(eq_discrepancy) > eq_fee:
-        eq_parity_status = f"[bold green]BOX EDGE: +${abs(eq_discrepancy) - eq_fee:.4f}/sh[/bold green]"
+        eq_parity_status_text = Text(f"BOX EDGE: +${abs(eq_discrepancy) - eq_fee:.4f}/sh", style="bold #4ade80")
     else:
-        eq_parity_status = f"[dim]OCC Clearing Bound (0.6¢)[/dim]"
+        eq_parity_status_text = Text("OCC Bound (0.6¢)", style="#64748b")
 
     content = Table.grid(expand=True)
     content.add_column()
-    content.add_row(Text(f"EQUITY OPTIONS: {cboe_opt} ({underlying} Strike ${strike:.2f} {type_str})", style="bold yellow"))
-    content.add_row(Text(f"Underlier: {underlying} US | Spot: ${eq_spot:.2f} | Theo Price: ${theo:.4f}", style="dim"))
-    content.add_row(Text("─" * 60, style="dim"))
+    content.add_row(Text(f"EQUITY OPTIONS: {cboe_opt} ({underlying} Strike {strike_fmt} {type_str})", style="bold #e5a93b"))
+    content.add_row(Text(f"Underlier: {underlying} US | Spot: ${eq_spot:.2f} | Theo Price: ${theo:.4f}", style="#94a3b8"))
+    content.add_row(Text("─" * 55, style="#3d2b45"))
     content.add_row(table)
-    content.add_row(Text("─" * 60, style="dim"))
-    content.add_row(Text(f"CROSS-VENUE NBBO SPREADS ({underlying} EQUITY)", style="bold yellow"))
+    content.add_row(Text("─" * 55, style="#3d2b45"))
+    content.add_row(Text(f"CROSS-VENUE NBBO SPREADS ({underlying} EQUITY)", style="bold #e5a93b"))
     content.add_row(Text.from_markup(f"  • {sp1}"))
     content.add_row(Text.from_markup(f"  • {sp2}"))
     content.add_row(Text.from_markup(f"  • {sp3}"))
-    content.add_row(Text("─" * 60, style="dim"))
-    content.add_row(Text("REAL-TIME GREEKS & VOLATILITY (CBOE & OPRA FEEDS)", style="bold yellow"))
+    content.add_row(Text("─" * 55, style="#3d2b45"))
+    content.add_row(Text("REAL-TIME GREEKS & VOLATILITY (CBOE & OPRA FEEDS)", style="bold #e5a93b"))
     content.add_row(Text.assemble(
-        ("  • CBOE IV:   ", "dim"), (f"{c_iv:.2f}%  ", "bold cyan"),
-        ("OPRA IV: ", "dim"), (f"{o_iv:.2f}%  ", "bold cyan"),
-        ("Delta (Δ): ", "dim"), (f"{c_delta:.4f}", "bold green")
+        ("  • CBOE IV: ", "#64748b"), (f"{c_iv:.2f}%  ", "bold #38bdf8"),
+        ("|  OPRA IV: ", "#64748b"), (f"{o_iv:.2f}%  ", "#38bdf8"),
+        ("|  Δ: ", "#64748b"), (f"{c_delta:.4f}", "bold #4ade80")
     ))
     content.add_row(Text.assemble(
-        ("  • Gamma (Γ): ", "dim"), (f"{c_gamma:.4f}  ", "bold green"),
-        ("Vega (ν): ", "dim"), (f"{c_vega:.4f}  ", "bold magenta"),
-        ("Theta (Θ): ", "dim"), (f"{c_theta:.4f} $/sh", "bold red")
+        ("  • Γ: ", "#64748b"), (f"{c_gamma:.4f}  ", "bold #4ade80"),
+        ("|  Vega (ν): ", "#64748b"), (f"{c_vega:.4f}  ", "#c084fc"),
+        ("|  Theta (θ): ", "#64748b"), (f"${c_theta:.4f}/sh", "#f87171")
     ))
     content.add_row(Text.assemble(
-        ("  • Activity:  ", "dim"), (f"Vol: {c_vol:,}  ", "bold white"),
-        ("Open Interest: ", "dim"), (f"{c_oi:,} contracts", "bold white")
+        ("  • Vol: ", "#64748b"), (f"{c_vol:,}  ", "#f1f5f9"),
+        ("|  OI: ", "#64748b"), (f"{c_oi:,} contracts", "#94a3b8")
     ))
-    content.add_row(Text("─" * 60, style="dim"))
-    content.add_row(Text("PUT-CALL PARITY & SYNTHETIC BASIS (CBOE LIVE)", style="bold yellow"))
+    content.add_row(Text("─" * 55, style="#3d2b45"))
+    content.add_row(Text("PUT-CALL PARITY & SYNTHETIC BASIS (CBOE LIVE)", style="bold #e5a93b"))
     content.add_row(Text.assemble(
-        ("  • Synthetic Spot: ", "dim"), (f"${s_synth:.4f}  ", "bold white"),
-        ("CBOE Index: ", "dim"), (f"${eq_spot:.2f}  ", "bold cyan"),
-        ("Δ: ", "dim"), (f"{'+' if eq_discrepancy >= 0 else ''}${eq_discrepancy:.4f}  ", "bold green" if abs(eq_discrepancy) > eq_fee else "dim"),
-        (eq_parity_status, "")
-    ))
-    content.add_row(Text.assemble(
-        ("  • Parity Spread:  ", "dim"), (f"C - P = ${c_theo - p_theo:.4f} vs S - K = ${eq_spot - eq_strike:.4f}  ", "bold white"),
-        ("Put Theo: ", "dim"), (f"${p_theo:.4f} (IV {ep.get('put_iv', 0)*100:.1f}%)", "bold magenta")
-    ))
-    content.add_row(Text("─" * 60, style="dim"))
-    content.add_row(Text("NBBO SPREAD MOMENTUM SPARKLINE (24 Ticks)", style="bold yellow"))
-    content.add_row(Text.assemble(
-        ("  • SPY Bid Momentum: ", "dim"), (f"[{spy_spark}] ", "bold magenta"), ("1¢ Penny Grid Locked", "dim")
+        ("  • Synth: ", "#64748b"), (f"${s_synth:.4f}  ", "bold #f1f5f9"),
+        ("Index: ", "#64748b"), (f"${eq_spot:.2f}  ", "#38bdf8"),
+        ("Δ: ", "#64748b"), (f"{'+' if eq_discrepancy >= 0 else ''}${eq_discrepancy:.4f}  ", "bold #4ade80" if abs(eq_discrepancy) > eq_fee else "#64748b"),
+        (eq_parity_status_text)
     ))
     content.add_row(Text.assemble(
-        ("  • CBOE NBBO Width:  ", "dim"), (f"[{sp_spark}] ", "bold white"), (last_width, "dim")
+        ("  • C - P: ", "#64748b"), (f"${c_theo - p_theo:.4f}  ", "bold #f1f5f9"),
+        ("vs S - K: ", "#64748b"), (f"${eq_spot - eq_strike:.4f}  ", "#94a3b8"),
+        ("|  Put Theo: ", "#64748b"), (f"${p_theo:.4f}", "#c084fc")
+    ))
+    content.add_row(Text("─" * 55, style="#3d2b45"))
+    content.add_row(Text("NBBO SPREAD MOMENTUM SPARKLINE (24 Ticks)", style="bold #e5a93b"))
+    content.add_row(Text.assemble(
+        ("  • SPY Bid: ", "#64748b"), (f"[{spy_spark}] ", "#c084fc"), ("Penny Locked", "#64748b")
+    ))
+    content.add_row(Text.assemble(
+        ("  • NBBO Width: ", "#64748b"), (f"[{sp_spark}] ", "#f1f5f9"), (last_width, "#64748b")
     ))
 
-    btn_markup = "[bold yellow][[b] SPLIT 50/50][/bold yellow]" if view_mode == "equity" else "[bold yellow][[e] EXPAND 100%][/bold yellow]"
-    title_str = f"[bold magenta]{underlying} EQUITY OPTIONS NBBO BOOK[/bold magenta]   {btn_markup}"
-    return Panel(content, title=title_str, border_style="magenta")
+    btn_markup = "[#fbbf24][[b] SPLIT][/]" if view_mode == "equity" else "[#fbbf24][[e] EXPAND][/]"
+    title_str = f"[bold #c084fc]{underlying} EQUITY OPTIONS NBBO BOOK[/]   {btn_markup}"
+    return Panel(content, title=title_str, border_style="#c084fc")
 
 def render_latency_dock(bench: dict) -> Panel:
     if not bench or not bench.get('stages'):
-        empty_text = Text("Awaiting hardware latency benchmark telemetry from engine (logs/latency_benchmark.txt)...", style="dim")
-        return Panel(empty_text, title="[bold yellow]INSTITUTIONAL HARDWARE CYCLE LATENCY PROFILER (ARM64 cntvct_el0 @ 25.00 MHz)[/bold yellow]", border_style="yellow")
+        empty_text = Text("Awaiting hardware latency benchmark telemetry from engine (logs/latency_benchmark.txt)...", style="#64748b")
+        return Panel(empty_text, title="[bold #e5a93b]INSTITUTIONAL HARDWARE CYCLE LATENCY PROFILER (ARM64 cntvct_el0 @ 25.00 MHz)[/]", border_style="#5c5040")
 
     stages = bench['stages']
     e2e = stages.get('END-TO-END (T2T)', {})
@@ -850,35 +900,35 @@ def render_latency_dock(bench: dict) -> Panel:
     summary_grid.add_column(justify="right", ratio=1)
 
     left_sum = Text.assemble(
-        ("TIMER: ", "dim"), (f"ARM64 cntvct_el0 @ {bench['freq']:.2f} MHz (40.0 ns/tick)  ", "bold cyan"),
-        ("SAMPLES: ", "dim"), (f"{bench['samples']:,} pkts  ", "bold green"),
-        ("AFFINITY: ", "dim"), ("Core 2 (Pinned Hot-Spin)", "bold magenta"),
+        ("TIMER: ", "#64748b"), (f"ARM64 cntvct_el0 @ {bench['freq']:.2f} MHz (40.0 ns/tick)  ", "bold #38bdf8"),
+        ("SAMPLES: ", "#64748b"), (f"{bench['samples']:,} pkts  ", "bold #4ade80"),
+        ("AFFINITY: ", "#64748b"), ("Core 2 (Pinned Hot-Spin)", "#c084fc"),
     )
     right_sum = Text.assemble(
-        ("T2T P50: ", "dim"), (f"{e2e.get('p50', 0):,.1f} ns  ", "bold green"),
-        ("P90: ", "dim"), (f"{e2e.get('p90', 0):,.1f} ns  ", "bold cyan"),
-        ("P99: ", "dim"), (f"{e2e.get('p99', 0):,.1f} ns  ", "bold yellow"),
-        ("P99.9: ", "dim"), (f"{e2e.get('p999', 0)/1000.0:.1f} µs  ", "bold red"),
-        ("MEAN: ", "dim"), (f"{e2e.get('mean', 0):,.1f} ns", "bold white"),
+        ("T2T P50: ", "#64748b"), (f"{e2e.get('p50', 0):,.1f} ns  ", "bold #4ade80"),
+        ("P90: ", "#64748b"), (f"{e2e.get('p90', 0):,.1f} ns  ", "bold #38bdf8"),
+        ("P99: ", "#64748b"), (f"{e2e.get('p99', 0):,.1f} ns  ", "bold #fbbf24"),
+        ("P99.9: ", "#64748b"), (f"{e2e.get('p999', 0)/1000.0:.1f} µs  ", "bold #f87171"),
+        ("MEAN: ", "#64748b"), (f"{e2e.get('mean', 0):,.1f} ns", "bold #f1f5f9"),
     )
     summary_grid.add_row(left_sum, right_sum)
 
     t = Table(expand=True, box=None, padding=(0, 1))
-    t.add_column("PIPELINE STAGE", style="bold white", no_wrap=True)
-    t.add_column("MIN (ns)", justify="right", style="dim")
-    t.add_column("P50 (ns)", justify="right", style="bold green")
-    t.add_column("P90 (ns)", justify="right", style="bold cyan")
-    t.add_column("P99 (ns)", justify="right", style="bold yellow")
-    t.add_column("P99.9 (ns)", justify="right", style="bold red")
-    t.add_column("MEAN (ns)", justify="right", style="white")
-    t.add_column("LATENCY DISTRIBUTION PROFILE (P99 BUDGET)", justify="left")
+    t.add_column("PIPELINE STAGE", style="bold #f1f5f9", no_wrap=True)
+    t.add_column("MIN (ns)", justify="right", style="#64748b", no_wrap=True)
+    t.add_column("P50 (ns)", justify="right", style="bold #4ade80", no_wrap=True)
+    t.add_column("P90 (ns)", justify="right", style="bold #38bdf8", no_wrap=True)
+    t.add_column("P99 (ns)", justify="right", style="bold #fbbf24", no_wrap=True)
+    t.add_column("P99.9 (ns)", justify="right", style="bold #f87171", no_wrap=True)
+    t.add_column("MEAN (ns)", justify="right", style="#e2e8f0", no_wrap=True)
+    t.add_column("PROFILE (P99 BUDGET)", justify="left", no_wrap=True)
 
     display_names = [
-        ("1. Packet Ingress", "1. Kernel-Bypass Ingress (AF_XDP RX)", "cyan"),
-        ("2. Zero-Copy Parse", "2. Zero-Copy SBE/ITCH Parsing", "green"),
-        ("3. L2 Book Update", "3. Lock-Free L2 BBO Order Book", "magenta"),
-        ("4. Arb Strategy", "4. Cross-Venue Arb Engine Eval", "yellow"),
-        ("END-TO-END (T2T)", "TOTAL TICK-TO-TRADE (T2T DECISION)", "bold white"),
+        ("1. Packet Ingress", "1. Kernel-Bypass Ingress (AF_XDP)", "#38bdf8"),
+        ("2. Zero-Copy Parse", "2. Zero-Copy SBE/ITCH Parsing", "#4ade80"),
+        ("3. L2 Book Update", "3. Lock-Free L2 BBO Order Book", "#c084fc"),
+        ("4. Arb Strategy", "4. Cross-Venue Arb Engine Eval", "#fbbf24"),
+        ("END-TO-END (T2T)", "TOTAL TICK-TO-TRADE (T2T)", "bold #f1f5f9"),
     ]
 
     for key, label, color in display_names:
@@ -887,8 +937,8 @@ def render_latency_dock(bench: dict) -> Panel:
             continue
         p99_val = row['p99']
         pct = min(1.0, max(0.01, p99_val / e2e_p99)) if e2e_p99 > 0 else 0
-        bar_len = int(round(pct * 22))
-        bar_str = "█" * bar_len + "░" * (22 - bar_len)
+        bar_len = int(round(pct * 12))
+        bar_str = "█" * bar_len + "░" * (12 - bar_len)
         bar_display = f"[{color}]{bar_str}[/{color}] {pct*100.0:>5.1f}%"
 
         t.add_row(
@@ -905,10 +955,10 @@ def render_latency_dock(bench: dict) -> Panel:
     content = Table.grid(expand=True)
     content.add_column()
     content.add_row(summary_grid)
-    content.add_row(Text("─" * 120, style="dim"))
+    content.add_row(Text("─" * 100, style="#5c5040"))
     content.add_row(t)
 
-    return Panel(content, title="[bold yellow]INSTITUTIONAL HARDWARE CYCLE LATENCY PROFILER (ARM64 cntvct_el0 @ 25.00 MHz)[/bold yellow]", border_style="yellow")
+    return Panel(content, title=f"[bold #e5a93b]INSTITUTIONAL HARDWARE CYCLE LATENCY PROFILER (ARM64 cntvct_el0 @ {bench['freq']:.2f} MHz)[/]", border_style="#5c5040")
 
 def render_footer(view_mode: str = "split") -> Panel:
     grid = Table.grid(expand=True)
@@ -916,24 +966,24 @@ def render_footer(view_mode: str = "split") -> Panel:
     grid.add_column(justify="right", ratio=1)
 
     if view_mode == "crypto":
-        view_cmd = "[[b] SPLIT (50/50) | [e] EXPAND EQUITY (100%)]  "
+        view_cmd = "[[b] Split | [e] Equity 100%]  "
     elif view_mode == "equity":
-        view_cmd = "[[b] SPLIT (50/50) | [c] EXPAND CRYPTO (100%)]  "
+        view_cmd = "[[b] Split | [c] Crypto 100%]  "
     else:
-        view_cmd = "[[c] EXPAND CRYPTO (100%) | [e] EXPAND EQUITY (100%)]  "
+        view_cmd = "[[c] Crypto 100% | [e] Equity 100%]  "
 
     left = Text.assemble(
-        ("VIEW: ", "dim"),
-        (view_cmd, "bold yellow"),
-        ("ACTIONS: ", "dim"),
-        ("[s] Select Contracts  ", "bold green"),
-        ("[q] Exit  ", "bold white"),
-        ("ENGINE: ", "dim"),
-        ("LIVE ARB EVALUATION ACTIVE", "bold green"),
+        ("VIEW: ", "#64748b"),
+        (view_cmd, "bold #fbbf24"),
+        ("NAV: ", "#64748b"),
+        ("[Left/Right/Up/Down]  ", "bold #e2e8f0"),
+        ("ACTIONS: ", "#64748b"),
+        ("[s] Select Contracts  ", "bold #4ade80"),
+        ("[q] Exit", "#f87171")
     )
-    right = Text(f"BLOOMBERG TERMINAL [OMON] | VIEW: {view_mode.upper()}", style="bold yellow")
+    right = Text(f"BLOOMBERG TERMINAL [OMON] | VIEW: {view_mode.upper()}", style="bold #e5a93b")
     grid.add_row(left, right)
-    return Panel(grid, style="on black", border_style="dim")
+    return Panel(grid, style="on black", border_style="#5c5040")
 
 def run_tui(start_in_select: bool = True):
     console = Console()
@@ -1002,7 +1052,11 @@ def run_tui(start_in_select: bool = True):
                         elif k in ['f', 'g', 'h', 'i', 'j']:
                             sel_e_strike_idx = ord(k) - ord('f')
                             active_side = 'equity'
-                        elif k in ['\t', 'LEFT', 'RIGHT']:
+                        elif k == 'LEFT':
+                            active_side = 'crypto'
+                        elif k == 'RIGHT':
+                            active_side = 'equity'
+                        elif k in ['\t', 'BACKTAB']:
                             active_side = 'equity' if active_side == 'crypto' else 'crypto'
                         elif k == 'UP':
                             if active_side == 'crypto':
@@ -1025,26 +1079,26 @@ def run_tui(start_in_select: bool = True):
                             mode = "stream"
                             stream_layout = make_layout(view_mode)
                             live.update(stream_layout)
-                        elif k in ['q', 'ESC']:
+                        elif k in ['q', 'Q']:
                             break
                     elif mode == "stream":
-                        if k == 'c':
+                        if k in ['c', 'C', 'LEFT']:
                             view_mode = "crypto"
                             stream_layout = make_layout(view_mode)
                             live.update(stream_layout)
-                        elif k == 'e':
+                        elif k in ['e', 'E', 'RIGHT']:
                             view_mode = "equity"
                             stream_layout = make_layout(view_mode)
                             live.update(stream_layout)
-                        elif k == 'b':
+                        elif k in ['b', 'B', 'UP', 'DOWN']:
                             view_mode = "split"
                             stream_layout = make_layout(view_mode)
                             live.update(stream_layout)
-                        elif k == 's':
+                        elif k in ['s', 'S']:
                             mode = "select"
                             sel_layout = make_selection_layout()
                             live.update(sel_layout)
-                        elif k in ['q', 'ESC']:
+                        elif k in ['q', 'Q']:
                             break
 
                 # 2. Render appropriate mode
