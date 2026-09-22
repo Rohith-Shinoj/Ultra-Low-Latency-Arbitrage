@@ -60,14 +60,14 @@ public:
     bool is_running() const { return running_; }
     void stop() { running_ = false; }
     const std::string& get_mode() const { return active_mode_; }
-    const SolarflareScanResult& get_solarflare_scan() const { return solarflare_scan_; }
+    const ull::SolarflareScanResult& get_solarflare_scan() const { return solarflare_scan_; }
     bool is_solarflare_active() const { return solarflare_scan_.is_accelerated(); }
 
 private:
     Config config_;
     bool running_ = false;
     std::string active_mode_ = "AF_XDP (Kernel Bypass)";
-    SolarflareScanResult solarflare_scan_;
+    ull::SolarflareScanResult solarflare_scan_;
 
     // Opaque internals (XSK UMEM, sockets, rings)
     struct Impl;

@@ -58,7 +58,7 @@ AFXDPSocket::~AFXDPSocket() {
 
 bool AFXDPSocket::init() {
     // 0. Hardware Scan: Probe for Solarflare OpenOnload and SFC PCIe adapters
-    solarflare_scan_ = SolarflareManager::scan_hardware();
+    solarflare_scan_ = ull::SolarflareManager::scan_hardware();
 
     // 1. Attempt Native / SKB AF_XDP Initialization
     size_t umem_size = config_.num_frames * config_.frame_size;
@@ -125,7 +125,7 @@ bool AFXDPSocket::init() {
 
         // Apply Solarflare Onload socket tuning if present
         if (solarflare_scan_.is_accelerated()) {
-            SolarflareManager::configure_onload_socket(fd);
+            ull::SolarflareManager::configure_onload_socket(fd);
         }
 
         int opt = 1;

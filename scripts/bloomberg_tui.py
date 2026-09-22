@@ -484,41 +484,44 @@ def fetch_live_quotes(cfg: dict = None):
     history.record_tick(quotes)
     return quotes
 
+def _blank_panel() -> Panel:
+    return Panel(Text(""), style="on black", border_style="black")
+
 def make_layout(view_mode="split") -> Layout:
     """Defines the dual-pane Bloomberg-style screen geometry with 100% fullscreen toggle and live arbitrage tape."""
-    layout = Layout(name="root")
+    layout = Layout(name="root", renderable=_blank_panel())
     layout.split(
-        Layout(name="header", size=3),
-        Layout(name="main", size=23),
-        Layout(name="tape_dock", ratio=1),
-        Layout(name="footer", size=3),
+        Layout(name="header", size=3, renderable=_blank_panel()),
+        Layout(name="main", size=23, renderable=_blank_panel()),
+        Layout(name="tape_dock", ratio=1, renderable=_blank_panel()),
+        Layout(name="footer", size=3, renderable=_blank_panel()),
     )
     if view_mode == "crypto":
         layout["main"].split_row(
-            Layout(name="crypto_panel", ratio=1),
+            Layout(name="crypto_panel", ratio=1, renderable=_blank_panel()),
         )
     elif view_mode == "equity":
         layout["main"].split_row(
-            Layout(name="equity_panel", ratio=1),
+            Layout(name="equity_panel", ratio=1, renderable=_blank_panel()),
         )
     else:  # "split"
         layout["main"].split_row(
-            Layout(name="crypto_panel", ratio=1),
-            Layout(name="equity_panel", ratio=1),
+            Layout(name="crypto_panel", ratio=1, renderable=_blank_panel()),
+            Layout(name="equity_panel", ratio=1, renderable=_blank_panel()),
         )
     return layout
 
 def make_selection_layout() -> Layout:
     """Defines the institutional in-TUI contract selection matrix screen."""
-    layout = Layout(name="root")
+    layout = Layout(name="root", renderable=_blank_panel())
     layout.split(
-        Layout(name="sel_header", size=3),
-        Layout(name="sel_main", ratio=1),
-        Layout(name="sel_footer", size=3),
+        Layout(name="sel_header", size=3, renderable=_blank_panel()),
+        Layout(name="sel_main", ratio=1, renderable=_blank_panel()),
+        Layout(name="sel_footer", size=3, renderable=_blank_panel()),
     )
     layout["sel_main"].split_row(
-        Layout(name="sel_crypto", ratio=1),
-        Layout(name="sel_equity", ratio=1),
+        Layout(name="sel_crypto", ratio=1, renderable=_blank_panel()),
+        Layout(name="sel_equity", ratio=1, renderable=_blank_panel()),
     )
     return layout
 
@@ -1331,7 +1334,38 @@ def run_tui(start_in_select: bool = True):
 
     sel_layout = make_selection_layout()
     stream_layout = make_layout(view_mode)
-    active_layout = sel_layout if mode == "select" else stream_layout
+
+    def update_selection_panes():
+        sel_layout["sel_header"].update(render_selection_header())
+        sel_layout["sel_crypto"].update(render_selection_crypto(catalog, sel_c_idx, sel_c_strike_idx, active_side))
+        sel_layout["sel_equity"].update(render_selection_equity(catalog, sel_e_idx, sel_e_strike_idx, active_side))
+        sel_layout["sel_footer"].update(render_selection_footer(active_side))
+
+    def update_stream_panes():
+        cfg = load_active_contracts()
+        data = fetch_live_quotes(cfg)
+        greeks = load_greeks()
+        parity = load_parity()
+        latency_data = parse_latency_benchmark()
+        m = engine_live_tracker.sample(data.get('total_ticks', 0))
+        cpu_pct = m.get('cpu_pct', 0.0)
+        core_id = m.get('core_id', 2)
+
+        stream_layout["header"].update(render_header(data.get('total_ticks', 0)))
+        if view_mode in ["split", "crypto"]:
+            stream_layout["crypto_panel"].update(render_crypto_panel(data, greeks, parity, cfg, view_mode))
+        if view_mode in ["split", "equity"]:
+            stream_layout["equity_panel"].update(render_equity_panel(data, greeks, parity, cfg, view_mode))
+        stream_layout["tape_dock"].update(render_telemetry_dock(latency_data, data, tape_stream))
+        stream_layout["footer"].update(render_footer(view_mode, tape_stream, cpu_pct=cpu_pct, core_id=core_id))
+
+    # Pre-render initial frame so Rich Live never draws unpopulated wireframe debug placeholders
+    if mode == "select":
+        update_selection_panes()
+        active_layout = sel_layout
+    else:
+        update_stream_panes()
+        active_layout = stream_layout
 
     # Terminal raw / cbreak mode setup
     is_tty = sys.stdin.isatty()
@@ -1391,10 +1425,12 @@ def run_tui(start_in_select: bool = True):
                             restart_gateways_bg()
                             mode = "stream"
                             stream_layout = make_layout(view_mode)
+                            update_stream_panes()
                             live.update(stream_layout)
                         elif k == 'ESC':
                             mode = "stream"
                             stream_layout = make_layout(view_mode)
+                            update_stream_panes()
                             live.update(stream_layout)
                         elif k in ['q', 'Q']:
                             break
@@ -1406,47 +1442,33 @@ def run_tui(start_in_select: bool = True):
                             # Arrow Left expands Crypto pane on top
                             view_mode = "crypto"
                             stream_layout = make_layout(view_mode)
+                            update_stream_panes()
                             live.update(stream_layout)
                         elif k in ['e', 'E', 'RIGHT']:
                             # Arrow Right expands Equity pane on top
                             view_mode = "equity"
                             stream_layout = make_layout(view_mode)
+                            update_stream_panes()
                             live.update(stream_layout)
                         elif k in ['b', 'B', 'UP', 'DOWN']:
                             # Arrow Up / Down returns to Double Paned Split
                             view_mode = "split"
                             stream_layout = make_layout(view_mode)
+                            update_stream_panes()
                             live.update(stream_layout)
                         elif k in ['s', 'S', 'ESC']:
                             mode = "select"
                             sel_layout = make_selection_layout()
+                            update_selection_panes()
                             live.update(sel_layout)
                         elif k in ['q', 'Q']:
                             break
 
                 # 2. Render appropriate mode
                 if mode == "select":
-                    sel_layout["sel_header"].update(render_selection_header())
-                    sel_layout["sel_crypto"].update(render_selection_crypto(catalog, sel_c_idx, sel_c_strike_idx, active_side))
-                    sel_layout["sel_equity"].update(render_selection_equity(catalog, sel_e_idx, sel_e_strike_idx, active_side))
-                    sel_layout["sel_footer"].update(render_selection_footer(active_side))
+                    update_selection_panes()
                 else:  # mode == "stream"
-                    cfg = load_active_contracts()
-                    data = fetch_live_quotes(cfg)
-                    greeks = load_greeks()
-                    parity = load_parity()
-                    latency_data = parse_latency_benchmark()
-                    m = engine_live_tracker.sample(data.get('total_ticks', 0))
-                    cpu_pct = m.get('cpu_pct', 0.0)
-                    core_id = m.get('core_id', 2)
-
-                    stream_layout["header"].update(render_header(data['total_ticks']))
-                    if view_mode in ["split", "crypto"]:
-                        stream_layout["crypto_panel"].update(render_crypto_panel(data, greeks, parity, cfg, view_mode))
-                    if view_mode in ["split", "equity"]:
-                        stream_layout["equity_panel"].update(render_equity_panel(data, greeks, parity, cfg, view_mode))
-                    stream_layout["tape_dock"].update(render_telemetry_dock(latency_data, data, tape_stream))
-                    stream_layout["footer"].update(render_footer(view_mode, tape_stream, cpu_pct=cpu_pct, core_id=core_id))
+                    update_stream_panes()
 
                 time.sleep(0.25)
     except KeyboardInterrupt:

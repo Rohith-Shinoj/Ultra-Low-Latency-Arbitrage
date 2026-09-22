@@ -1,4 +1,4 @@
-# Ultra-Low-Latency Cross-Venue Arbitrage & Trading Terminal
+# Ultra-Low-Latency Cross-Venue Arbitrage Terminal
 
 An institutional-grade, ultra-low-latency arbitrage pipeline and Bloomberg-style dual-pane terminal for cross-venue options and spot markets across Equity and Crypto.
 

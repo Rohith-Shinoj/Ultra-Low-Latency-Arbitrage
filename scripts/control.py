@@ -124,6 +124,24 @@ def start_component(name):
         print(f"  {CYAN}●{RESET} {name:<12} already running (PID {pid})")
         return True
 
+    # Auto-compile C++ engine if binary is missing or source files have been modified
+    if name == "engine":
+        engine_bin = ROOT_DIR / "engine" / "bin" / "engine_main"
+        needs_build = not engine_bin.exists()
+        if not needs_build:
+            bin_mtime = engine_bin.stat().st_mtime
+            for p in (ROOT_DIR / "engine").rglob("*"):
+                if p.suffix in (".cpp", ".c", ".h", ".hpp") or p.name == "Makefile":
+                    if p.stat().st_mtime > bin_mtime:
+                        needs_build = True
+                        break
+        if needs_build:
+            print(f"  {CYAN}⚡ Building C++ engine (make -C engine)...{RESET}")
+            res = subprocess.run(["make", "-C", str(ROOT_DIR / "engine")], capture_output=True, text=True)
+            if res.returncode != 0:
+                print(f"  {RED}✖ Engine compilation failed:{RESET}\n{res.stderr}")
+                return False
+
     log_path = get_log_file(name)
     log_file = open(log_path, "a")
 

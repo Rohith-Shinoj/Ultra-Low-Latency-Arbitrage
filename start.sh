@@ -19,4 +19,11 @@ if [ -n "$SUDO_USER" ]; then
 fi
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Auto-compile C++ engine binary if missing
+if [ ! -f "$DIR/engine/bin/engine_main" ]; then
+    echo "⚡ C++ engine binary not found. Compiling via 'make -C engine'..."
+    make -C "$DIR/engine" || exit 1
+fi
+
 exec python3 -u "$DIR/scripts/control.py" "$@"

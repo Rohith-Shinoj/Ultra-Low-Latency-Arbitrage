@@ -138,15 +138,15 @@ public:
     // Configures socket options for ultra-low latency under Solarflare Onload
     static void configure_onload_socket(int fd) {
         // Enable kernel-bypass busy polling on the socket
-        int busy_poll = 50;
 #ifdef SO_BUSY_POLL
+        int busy_poll = 50;
         setsockopt(fd, SOL_SOCKET, SO_BUSY_POLL, &busy_poll, sizeof(busy_poll));
 #endif
-        // Low latency spinning flag
-        int low_latency = 1;
 #ifdef SO_LOW_LATENCY
+        int low_latency = 1;
         setsockopt(fd, SOL_SOCKET, SO_LOW_LATENCY, &low_latency, sizeof(low_latency));
 #endif
+        (void)fd;
     }
 };
 
