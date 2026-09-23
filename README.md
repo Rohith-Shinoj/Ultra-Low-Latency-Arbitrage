@@ -11,6 +11,14 @@ An institutional-grade, ultra-low-latency arbitrage pipeline and Bloomberg-style
 
 ---
 
+## Live Terminal
+
+<p align="center">
+  <img src="assets/demo.gif" alt="Bloomberg-Style Dual-Pane Terminal Demo" width="100%">
+</p>
+
+---
+
 ## Architecture Overview
 
 ```
@@ -62,28 +70,74 @@ An institutional-grade, ultra-low-latency arbitrage pipeline and Bloomberg-style
 
 ---
 
-## Quick Start
+## Prerequisites & Installation
 
-The entire pipeline and trading terminal are managed through `sudo ./start.sh`.
+### 1. System Packages (`sudo apt` / `snap`)
+Install C++20 build tools, Clang/LLVM for eBPF compilation, Linux kernel headers, and AF_XDP/BPF development libraries:
+
+**Via APT (Standard Ubuntu/Debian):**
+```bash
+sudo apt update && sudo apt install -y \
+    build-essential \
+    clang \
+    llvm \
+    libbpf-dev \
+    libxdp-dev \
+    linux-headers-$(uname -r) \
+    python3 \
+    python3-pip \
+    python3-venv \
+    rlwrap
+```
+
+**Via Snap (Optional / Alternative):**
+If you manage your developer toolchain via `snap`, Clang and packaging tools can alternatively be installed with:
+```bash
+# Optional snap toolchain installations
+sudo snap install --classic clangd
+```
+> [!NOTE]
+> Host kernel headers (`linux-headers-$(uname -r)`), `libbpf-dev`, and `libxdp-dev` must be installed through `apt` to match your running kernel release for eBPF/AF_XDP driver bindings.
+
+### 2. Python Dependencies (`requirements.txt`)
+Install the required asynchronous networking, quantitative calculation, and terminal rendering packages:
 
 ```bash
-# Launch Bloomberg-style terminal TUI directly (requires sudo for kernel AF_XDP & raw sockets)
-sudo ./start.sh
+pip install -r requirements.txt
+```
+
+### 3. KDB+/q Engine
+The tick pipeline runs on **KDB+/q**. Ensure `q` is installed and available on your `PATH` (default: `~/.kx/bin/q` or `/opt/kx/q`):
+- Download KDB+ for your platform (Linux x86_64 / aarch64) from [Kx Systems](https://kx.com/download/).
+- Ensure `q` is added to your shell profile (`~/.bashrc`):
+  ```bash
+  export PATH="$HOME/.kx/bin:$PATH"
+  ```
+
+---
+
+## Quick Start
+
+The entire pipeline and trading terminal are managed through `./start.sh`.
+
+```bash
+# Launch Bloomberg-style terminal TUI directly (runs directly as standard user)
+./start.sh
 
 # Check real-time process health and PIDs of all components
-sudo ./start.sh --status
+./start.sh --status
 
 # Restart all infrastructure services (KDB+, subscriber, engine, gateways)
-sudo ./start.sh --restart all
+./start.sh --restart all
 
 # Query live KDB+ tick counts, cross-venue prices, and quant Greeks
-sudo ./start.sh --query
+./start.sh --query
 
 # View hardware latency benchmarks from the C++ engine
-sudo ./start.sh --benchmark
+./start.sh --benchmark
 
 # Display full CLI manual
-sudo ./start.sh --help
+./start.sh --help
 ```
 
 ---
@@ -109,5 +163,6 @@ sudo ./start.sh --help
 ├── kdb/                 # KDB+ tickerplant (tp.q), schemas, and multicast subscriber
 ├── scripts/             # Controller (control.py), Bloomberg TUI, contract selector
 ├── start.sh             # Root-level launcher and CLI management script
+├── requirements.txt     # Core Python library dependencies
 └── .gitignore           # Repository ignore rules (ignores .md except READMEs)
 ```

@@ -1,26 +1,26 @@
 {
   "crypto": {
-    "deribit_instrument": "BTC-2OCT26-88000-C",
+    "deribit_instrument": "BTC-2OCT26-84000-C",
     "underlying": "BTC",
     "expiry": "2OCT26",
-    "strike": 88000.0,
+    "strike": 84000.0,
     "call_put": "C",
-    "okx_inst_id": "BTC-USD-261002-88000-C",
-    "binance_symbol": "BTC-261002-88000-C",
-    "sym": "BTC_C88000"
+    "okx_inst_id": "BTC-USD-261002-84000-C",
+    "binance_symbol": "BTC-261002-84000-C",
+    "sym": "BTC_C84000"
   },
   "equity": {
-    "cboe_option": "SPY260922C00773000",
+    "cboe_option": "SPY260922C00771000",
     "underlying": "SPY",
     "expiry": "260922",
-    "strike": 773.0,
+    "strike": 771.0,
     "call_put": "C",
-    "nasdaq_strike": "773.00",
+    "nasdaq_strike": "771.00",
     "nasdaq_expiry": "Sep 22",
-    "sym": "SPY_C773",
-    "bid": 0.83,
-    "ask": 0.84,
-    "iv": 0.1056,
-    "theo": 0.8362
+    "sym": "SPY_C771",
+    "bid": 2.37,
+    "ask": 2.38,
+    "iv": 0.1266,
+    "theo": 2.3903
   }
 }

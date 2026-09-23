@@ -3,7 +3,6 @@
 Options Contract Catalog Discovery Engine.
 Queries live public exchange APIs to fetch and cache top active contracts
 across 5 Cryptos (BTC, ETH, SOL, XRP, AVAX) and 5 Equities (SPY, QQQ, AAPL, NVDA, TSLA).
-Guarantees 100% genuine market data with zero synthetic data.
 """
 
 import os

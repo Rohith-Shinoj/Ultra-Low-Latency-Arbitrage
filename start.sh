@@ -1,12 +1,6 @@
 #!/usr/bin/env bash
 # Ultra-Low-Latency Arbitrage Infrastructure & Trading Terminal Launcher
-# Requires root privileges for kernel-bypass AF_XDP, core isolation, and raw sockets.
-
-if [ "$EUID" -ne 0 ]; then
-    echo "Error: ./start.sh requires root privileges for kernel AF_XDP and core pinning." >&2
-    echo "Please run: sudo ./start.sh $@" >&2
-    exit 1
-fi
+# Runs directly as standard user (no sudo required).
 
 # Preserve invoking user's python environment and site-packages under sudo
 if [ -n "$SUDO_USER" ]; then
@@ -16,6 +10,26 @@ if [ -n "$SUDO_USER" ]; then
             export PYTHONPATH="$p${PYTHONPATH:+:$PYTHONPATH}"
         fi
     done
+    for bin_dir in "$USER_HOME/.kx/bin" "$USER_HOME/q/bin" "$USER_HOME/.local/bin"; do
+        if [ -d "$bin_dir" ]; then
+            export PATH="$bin_dir:$PATH"
+        fi
+    done
+    if [ -d "$USER_HOME/.kx" ]; then
+        export QHOME="${QHOME:-$USER_HOME/.kx/q}"
+        export QLIC="${QLIC:-$USER_HOME/.kx}"
+    fi
+fi
+
+# Fallback for standard ubuntu user installation if not invoked via SUDO_USER
+for bin_dir in "/home/ubuntu/.kx/bin" "/home/ubuntu/.local/bin"; do
+    if [ -d "$bin_dir" ] && [[ ":$PATH:" != *":$bin_dir:"* ]]; then
+        export PATH="$bin_dir:$PATH"
+    fi
+done
+if [ -d "/home/ubuntu/.kx" ]; then
+    export QHOME="${QHOME:-/home/ubuntu/.kx/q}"
+    export QLIC="${QLIC:-/home/ubuntu/.kx}"
 fi
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

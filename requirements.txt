@@ -1,0 +1,6 @@
+# Core Python Dependencies
+
+numpy>=1.26.0
+qPython>=2.0.0
+rich>=13.7.0
+websockets>=13.0

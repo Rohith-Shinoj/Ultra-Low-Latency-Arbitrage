@@ -488,7 +488,7 @@ def _blank_panel() -> Panel:
     return Panel(Text(""), style="on black", border_style="black")
 
 def make_layout(view_mode="split") -> Layout:
-    """Defines the dual-pane Bloomberg-style screen geometry with 100% fullscreen toggle and live arbitrage tape."""
+    """Defines the dual-pane Bloomberg-style screen geometry with  fullscreen toggle and live arbitrage tape."""
     layout = Layout(name="root", renderable=_blank_panel())
     layout.split(
         Layout(name="header", size=3, renderable=_blank_panel()),
@@ -534,7 +534,7 @@ def render_selection_header() -> Panel:
     title = Text("OMON <GO>  |  CONTRACT SELECTION MATRIX", style="bold #e5a93b")
     mid_info = Text.assemble(
         ("SOURCE: ", "#64748b"), ("Live Exchange APIs (Deribit / OKX / Binance / CBOE / OPRA)  ", "#38bdf8"),
-        ("DATA: ", "#64748b"), ("100% Genuine (Zero Hardcoding)", "bold #4ade80"),
+        ("DATA: ", "#64748b"),
     )
     now_str = time.strftime("%Y-%m-%d %H:%M:%S UTC")
     right_info = Text(now_str, style="#fbbf24")

@@ -13,16 +13,46 @@ import argparse
 from pathlib import Path
 import glob
 
-# Ensure user site-packages are accessible when invoked via sudo
+import shutil
+
+# Ensure user site-packages and binaries (KX/KDB+, ~/.local/bin) are accessible when invoked via sudo
+_candidate_homes = []
 if "SUDO_USER" in os.environ:
     try:
         import pwd
-        u_home = pwd.getpwnam(os.environ["SUDO_USER"]).pw_dir
-        for p in glob.glob(f"{u_home}/.local/lib/python*/site-packages"):
-            if p not in sys.path:
-                sys.path.insert(0, p)
+        _candidate_homes.append(pwd.getpwnam(os.environ["SUDO_USER"]).pw_dir)
     except Exception:
         pass
+_candidate_homes.extend([str(Path.home()), "/home/ubuntu"])
+
+for _uh in _candidate_homes:
+    if os.path.isdir(_uh):
+        for p in glob.glob(f"{_uh}/.local/lib/python*/site-packages"):
+            if p not in sys.path:
+                sys.path.insert(0, p)
+        for b in [f"{_uh}/.kx/bin", f"{_uh}/q/bin", f"{_uh}/.local/bin", f"{_uh}/bin"]:
+            if os.path.isdir(b) and b not in os.environ.get("PATH", "").split(":"):
+                os.environ["PATH"] = f"{b}:{os.environ.get('PATH', '')}"
+        _kx_dir = Path(_uh) / ".kx"
+        if _kx_dir.is_dir():
+            if "QLIC" not in os.environ and (_kx_dir / "kc.lic").exists():
+                os.environ["QLIC"] = str(_kx_dir)
+            if "QHOME" not in os.environ and (_kx_dir / "q").is_dir():
+                os.environ["QHOME"] = str(_kx_dir / "q")
+
+# Locate 'q' binary
+Q_BIN = shutil.which("q")
+if not Q_BIN:
+    for candidate in [
+        "/home/ubuntu/.kx/bin/q",
+        "/usr/local/bin/q",
+        "/opt/kx/bin/q",
+    ]:
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            Q_BIN = candidate
+            break
+if not Q_BIN:
+    Q_BIN = "q"
 
 # Paths
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -35,9 +65,9 @@ LOGS_DIR.mkdir(exist_ok=True)
 COMPONENTS = {
     "kdb": {
         "desc": "KDB+ Tickerplant (Port 5020)",
-        "cmd": ["q", "kdb/tp.q", "-p", "5020"],
+        "cmd": [Q_BIN, "kdb/tp.q", "-p", "5020"],
         "type": "Database",
-        "match": "q kdb/tp.q",
+        "match": f"{Q_BIN} kdb/tp.q",
     },
     "sub": {
         "desc": "Multicast Ingestion to KDB+",
@@ -167,27 +197,50 @@ def start_component(name):
         print(f"  {RED}✖{RESET} {name:<12} error: {e}")
         return False
 
+def find_pids_by_match(match_str):
+    pids = []
+    try:
+        res = subprocess.run(["pgrep", "-f", match_str], capture_output=True, text=True)
+        if res.returncode == 0:
+            for line in res.stdout.strip().splitlines():
+                if line.isdigit():
+                    pids.append(int(line))
+    except Exception:
+        pass
+    return pids
+
 def stop_component(name):
+    cfg = COMPONENTS[name]
     running, pid = get_status(name)
-    if not running:
+
+    match_pids = find_pids_by_match(cfg["match"])
+    all_pids = set(match_pids)
+    if pid:
+        all_pids.add(pid)
+
+    # Filter out current Python control process PID if it matches
+    all_pids.discard(os.getpid())
+
+    if not all_pids:
         print(f"  {YELLOW}○{RESET} {name:<12} not running")
         get_pid_file(name).unlink(missing_ok=True)
         return True
 
-    try:
-        os.kill(pid, signal.SIGTERM)
-        for _ in range(20):
-            time.sleep(0.1)
-            try:
-                os.kill(pid, 0)
-            except OSError:
-                break
-        else:
-            os.kill(pid, signal.SIGKILL)
-        print(f"  {RED}✔{RESET} {name:<12} stopped (PID {pid})")
-    except OSError:
-        print(f"  {RED}✔{RESET} {name:<12} stopped")
+    for p in all_pids:
+        try:
+            os.kill(p, signal.SIGTERM)
+            for _ in range(20):
+                time.sleep(0.1)
+                try:
+                    os.kill(p, 0)
+                except OSError:
+                    break
+            else:
+                os.kill(p, signal.SIGKILL)
+        except OSError:
+            pass
 
+    print(f"  {GREEN}✔{RESET} {name:<12} stopped")
     get_pid_file(name).unlink(missing_ok=True)
     return True
 
@@ -412,13 +465,13 @@ HELP_TEXT = f"""{BOLD}NAME{RESET}
     start.sh - Ultra-Low-Latency Arbitrage Infrastructure & Trading Terminal
 
 {BOLD}SYNOPSIS{RESET}
-    {BOLD}sudo ./start.sh{RESET} [{CYAN}OPTION{RESET}] [{YELLOW}TARGETS...{RESET}]
+    {BOLD}./start.sh{RESET} [{CYAN}OPTION{RESET}] [{YELLOW}TARGETS...{RESET}]
 
 {BOLD}DESCRIPTION{RESET}
     Central control interface and Bloomberg-style institutional trading terminal
     for the ultra-low-latency cross-venue equity & crypto options arbitrage system.
 
-    Running {BOLD}sudo ./start.sh{RESET} with no options launches the interactive Bloomberg TUI.
+    Running {BOLD}./start.sh{RESET} with no options launches the interactive Bloomberg TUI.
 
 {BOLD}OPTIONS{RESET}
     {CYAN}--tui{RESET}                  Launch full-scale Bloomberg-style dual-pane TUI monitor (default)
@@ -447,12 +500,12 @@ HELP_TEXT = f"""{BOLD}NAME{RESET}
     {YELLOW}binance_opt{RESET}         Binance crypto options gateway (UDP 5005)
 
 {BOLD}EXAMPLES{RESET}
-    sudo ./start.sh                  # Launch Bloomberg terminal TUI (default)
-    sudo ./start.sh --status         # Check health and PIDs of all components
-    sudo ./start.sh --restart all    # Restart entire pipeline
-    sudo ./start.sh --start gateways # Start all 6 options gateways
-    sudo ./start.sh --benchmark      # View nanosecond cycle-accurate engine benchmarks
-    sudo ./start.sh --query          # Query KDB+ cross-venue quote snapshots
+    ./start.sh                  # Launch Bloomberg terminal TUI (default)
+    ./start.sh --status         # Check health and PIDs of all components
+    ./start.sh --restart all    # Restart entire pipeline
+    ./start.sh --start gateways # Start all 6 options gateways
+    ./start.sh --benchmark      # View nanosecond cycle-accurate engine benchmarks
+    ./start.sh --query          # Query KDB+ cross-venue quote snapshots
 """
 
 def cmd_benchmark():
@@ -545,7 +598,7 @@ def main():
     elif first in ("--monitor", "monitor"):
         cmd_monitor()
     else:
-        sys.stderr.write(f"./start.sh: unrecognized option '{first}'\nRun 'sudo ./start.sh --help' for available options.\n")
+        sys.stderr.write(f"./start.sh: unrecognized option '{first}'\nRun './start.sh --help' for available options.\n")
         sys.exit(1)
 
 if __name__ == "__main__":
