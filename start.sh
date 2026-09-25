@@ -2,35 +2,38 @@
 # Ultra-Low-Latency Arbitrage Infrastructure & Trading Terminal Launcher
 # Runs directly as standard user (no sudo required).
 
-# Preserve invoking user's python environment and site-packages under sudo
+# Ensure python environment, site-packages, and binaries (q, kdb) are accessible
+TARGET_HOME="$HOME"
 if [ -n "$SUDO_USER" ]; then
-    USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
-    for p in "$USER_HOME"/.local/lib/python*/site-packages; do
-        if [ -d "$p" ]; then
-            export PYTHONPATH="$p${PYTHONPATH:+:$PYTHONPATH}"
-        fi
-    done
-    for bin_dir in "$USER_HOME/.kx/bin" "$USER_HOME/q/bin" "$USER_HOME/.local/bin"; do
-        if [ -d "$bin_dir" ]; then
-            export PATH="$bin_dir:$PATH"
-        fi
-    done
-    if [ -d "$USER_HOME/.kx" ]; then
-        export QHOME="${QHOME:-$USER_HOME/.kx/q}"
-        export QLIC="${QLIC:-$USER_HOME/.kx}"
-    fi
+    SUDO_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+    [ -n "$SUDO_HOME" ] && TARGET_HOME="$SUDO_HOME"
 fi
 
-# Fallback for standard ubuntu user installation if not invoked via SUDO_USER
-for bin_dir in "/home/ubuntu/.kx/bin" "/home/ubuntu/.local/bin"; do
-    if [ -d "$bin_dir" ] && [[ ":$PATH:" != *":$bin_dir:"* ]]; then
-        export PATH="$bin_dir:$PATH"
+for uh in "$TARGET_HOME" "/home/ubuntu"; do
+    if [ -d "$uh" ]; then
+        for p in "$uh"/.local/lib/python*/site-packages; do
+            if [ -d "$p" ]; then
+                export PYTHONPATH="$p${PYTHONPATH:+:$PYTHONPATH}"
+            fi
+        done
+        if [ -f "$uh/.kx/kc.lic" ] || [ -f "$uh/.kx/k4.lic" ]; then
+            export QHOME="${QHOME:-$uh/.kx/q}"
+            export QLIC="${QLIC:-$uh/.kx}"
+            export PATH="$uh/.kx/bin:$PATH"
+        elif [ -d "$uh/q" ]; then
+            export QHOME="${QHOME:-$uh/q}"
+            export QLIC="${QLIC:-$uh/q}"
+        elif [ -d "$uh/.kx" ]; then
+            export QHOME="${QHOME:-$uh/.kx/q}"
+            export QLIC="${QLIC:-$uh/.kx}"
+        fi
+        for bin_dir in "$uh/.kx/bin" "$uh/q/l64" "$uh/q/bin" "$uh/.local/bin" "$uh/bin"; do
+            if [ -d "$bin_dir" ] && [[ ":$PATH:" != *":$bin_dir:"* ]]; then
+                export PATH="$bin_dir:$PATH"
+            fi
+        done
     fi
 done
-if [ -d "/home/ubuntu/.kx" ]; then
-    export QHOME="${QHOME:-/home/ubuntu/.kx/q}"
-    export QLIC="${QLIC:-/home/ubuntu/.kx}"
-fi
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 

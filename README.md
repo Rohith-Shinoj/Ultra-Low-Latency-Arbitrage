@@ -106,13 +106,25 @@ Install the required asynchronous networking, quantitative calculation, and term
 pip install -r requirements.txt
 ```
 
-### 3. KDB+/q Engine
-The tick pipeline runs on **KDB+/q**. Ensure `q` is installed and available on your `PATH` (default: `~/.kx/bin/q` or `/opt/kx/q`):
-- Download KDB+ for your platform (Linux x86_64 / aarch64) from [Kx Systems](https://kx.com/download/).
-- Ensure `q` is added to your shell profile (`~/.bashrc`):
+### 3. KDB+/q Engine & License
+The tick pipeline runs on **KDB+/q**. Download the free personal evaluation edition for Linux from [Kx Systems](https://kx.com/download/):
+- Unzip the downloaded archive (e.g. `l64.zip`) into `~/q`:
   ```bash
-  export PATH="$HOME/.kx/bin:$PATH"
+  mkdir -p ~/q
+  unzip l64.zip -d ~/q
   ```
+- Copy your KX license file (`kc.lic` or `k4.lic` received by email from KX) to `~/q/`:
+  ```bash
+  cp /path/to/kc.lic ~/q/
+  ```
+- Add `q` and `QHOME` to your shell profile (`~/.bashrc`):
+  ```bash
+  export QHOME="$HOME/q"
+  export PATH="$QHOME/l64:$PATH"
+  ```
+> [!TIP]
+> `./start.sh` automatically detects and exports `QHOME=~/q` and `PATH=$HOME/q/l64:$PATH` if `~/q` or `~/.kx` is present.
+
 
 ---
 

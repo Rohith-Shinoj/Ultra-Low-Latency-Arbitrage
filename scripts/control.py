@@ -30,20 +30,42 @@ for _uh in _candidate_homes:
         for p in glob.glob(f"{_uh}/.local/lib/python*/site-packages"):
             if p not in sys.path:
                 sys.path.insert(0, p)
-        for b in [f"{_uh}/.kx/bin", f"{_uh}/q/bin", f"{_uh}/.local/bin", f"{_uh}/bin"]:
+        _kx_dir = Path(_uh) / ".kx"
+        if _kx_dir.is_dir() and ((_kx_dir / "kc.lic").exists() or (_kx_dir / "k4.lic").exists()):
+            os.environ["QLIC"] = str(_kx_dir)
+            if (_kx_dir / "q").is_dir():
+                os.environ["QHOME"] = str(_kx_dir / "q")
+        else:
+            _q_dir = Path(_uh) / "q"
+            if _q_dir.is_dir():
+                if "QHOME" not in os.environ:
+                    os.environ["QHOME"] = str(_q_dir)
+                if "QLIC" not in os.environ:
+                    os.environ["QLIC"] = str(_q_dir)
+            if _kx_dir.is_dir():
+                if "QLIC" not in os.environ and (_kx_dir / "kc.lic").exists():
+                    os.environ["QLIC"] = str(_kx_dir)
+                if "QHOME" not in os.environ and (_kx_dir / "q").is_dir():
+                    os.environ["QHOME"] = str(_kx_dir / "q")
+        for b in [f"{_uh}/.kx/bin", f"{_uh}/q/l64", f"{_uh}/q/bin", f"{_uh}/.local/bin", f"{_uh}/bin"]:
             if os.path.isdir(b) and b not in os.environ.get("PATH", "").split(":"):
                 os.environ["PATH"] = f"{b}:{os.environ.get('PATH', '')}"
-        _kx_dir = Path(_uh) / ".kx"
-        if _kx_dir.is_dir():
-            if "QLIC" not in os.environ and (_kx_dir / "kc.lic").exists():
-                os.environ["QLIC"] = str(_kx_dir)
-            if "QHOME" not in os.environ and (_kx_dir / "q").is_dir():
-                os.environ["QHOME"] = str(_kx_dir / "q")
 
 # Locate 'q' binary
-Q_BIN = shutil.which("q")
+Q_BIN = None
+for _uh in _candidate_homes:
+    kx_q = Path(_uh) / ".kx" / "bin" / "q"
+    if kx_q.is_file() and os.access(kx_q, os.X_OK):
+        Q_BIN = str(kx_q)
+        break
+
+if not Q_BIN:
+    Q_BIN = shutil.which("q")
 if not Q_BIN:
     for candidate in [
+        str(Path.home() / ".kx" / "bin" / "q"),
+        str(Path.home() / "q" / "l64" / "q"),
+        str(Path.home() / ".local" / "bin" / "q"),
         "/home/ubuntu/.kx/bin/q",
         "/usr/local/bin/q",
         "/opt/kx/bin/q",
@@ -327,6 +349,9 @@ def load_engine_latency_stats():
 def cmd_query():
     """Queries KDB+ and C++ engine to show live counts, cross-exchange prices, quant Greeks, and latency."""
     try:
+        import numpy as np
+        if not hasattr(np, 'string_'):
+            np.string_ = np.bytes_
         from qpython import qconnection
         q = qconnection.QConnection(host='localhost', port=5020, timeout=3.0)
         q.open()

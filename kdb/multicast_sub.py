@@ -4,6 +4,8 @@ import struct
 import select
 from datetime import datetime
 import numpy as np
+if not hasattr(np, 'string_'):
+    np.string_ = np.bytes_
 from qpython import qconnection
 import sys
 import os

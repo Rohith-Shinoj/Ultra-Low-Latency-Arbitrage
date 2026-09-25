@@ -17,6 +17,9 @@ import argparse
 from pathlib import Path
 from collections import deque
 from datetime import datetime, timedelta
+import numpy as np
+if not hasattr(np, 'string_'):
+    np.string_ = np.bytes_
 from qpython import qconnection
 
 from rich.console import Console
