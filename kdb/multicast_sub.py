@@ -93,11 +93,17 @@ def send_upd(q, table, row):
 
 def main():
     q = qconnection.QConnection(host='localhost', port=5020)
-    try:
-        q.open()
-        print("Connected to KDB+ Tickerplant (Port 5020)")
-    except Exception as e:
-        print(f"Failed to connect to KDB: {e}")
+    connected = False
+    for _ in range(15):
+        try:
+            q.open()
+            connected = True
+            print("Connected to KDB+ Tickerplant (Port 5020)")
+            break
+        except Exception:
+            time.sleep(0.5)
+    if not connected:
+        print("Failed to connect to KDB after retries")
         return
 
     sockets = {create_mcast_socket(port): port for port in PORTS.keys()}

@@ -14,6 +14,7 @@ from pathlib import Path
 import glob
 
 import shutil
+import threading
 
 # Ensure user site-packages and binaries (KX/KDB+, ~/.local/bin) are accessible when invoked via sudo
 _candidate_homes = []
@@ -158,6 +159,45 @@ def get_pid_file(name):
 def get_log_file(name):
     return LOGS_DIR / f"{name}.log"
 
+def trim_log_file(log_path, max_lines=1000):
+    """Safely truncates a log file in-place keeping only the last max_lines (FIFO).
+    Uses r+ mode to overwrite in-place, preserving file descriptors and inodes
+    held by running background processes.
+    """
+    try:
+        p = Path(log_path)
+        if not p.is_file():
+            return
+        with open(p, "r+", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+            if len(lines) > max_lines:
+                f.seek(0)
+                f.writelines(lines[-max_lines:])
+                f.truncate()
+    except Exception:
+        pass
+
+def trim_all_logs(max_lines=1000):
+    """Trims all .log files in the logs directory."""
+    if not LOGS_DIR.is_dir():
+        return
+    for log_path in LOGS_DIR.glob("*.log"):
+        trim_log_file(log_path, max_lines=max_lines)
+
+def start_log_trimmer_thread(interval=3.0, max_lines=1000):
+    """Starts a background daemon thread that periodically trims all log files."""
+    def _trimmer_loop():
+        while True:
+            try:
+                trim_all_logs(max_lines=max_lines)
+            except Exception:
+                pass
+            time.sleep(interval)
+
+    t = threading.Thread(target=_trimmer_loop, daemon=True, name="LogTrimmer")
+    t.start()
+    return t
+
 def get_status(name):
     pid_file = get_pid_file(name)
     if pid_file.exists():
@@ -169,7 +209,7 @@ def get_status(name):
             pid_file.unlink(missing_ok=True)
     return False, None
 
-def start_component(name):
+def start_component(name, enable_logging=False):
     cfg = COMPONENTS[name]
     running, pid = get_status(name)
     if running:
@@ -195,11 +235,17 @@ def start_component(name):
                 return False
 
     log_path = get_log_file(name)
+    if enable_logging:
+        trim_log_file(log_path, max_lines=1000)
     log_file = open(log_path, "a")
+
+    cmd = list(cfg["cmd"])
+    if name == "engine" and enable_logging:
+        cmd.append("--log")
 
     try:
         proc = subprocess.Popen(
-            cfg["cmd"],
+            cmd,
             cwd=str(ROOT_DIR),
             stdin=subprocess.DEVNULL,
             stdout=log_file,
@@ -266,21 +312,23 @@ def stop_component(name):
     get_pid_file(name).unlink(missing_ok=True)
     return True
 
-def cmd_start(targets):
+def cmd_start(targets, enable_logging=False):
+    if enable_logging:
+        trim_all_logs(max_lines=1000)
     if not targets or "all" in targets:
         print(f"{BOLD}Starting Entire Pipeline (KDB + Engine + 6 Live Options Gateways)...{RESET}")
         for c in ALL_COMPONENTS:
-            start_component(c)
+            start_component(c, enable_logging=enable_logging)
             if c in ["kdb", "engine"]:
                 time.sleep(0.5)
     elif "gateways" in targets:
         print(f"{BOLD}Starting All 6 Options Gateways...{RESET}")
         for c in GATEWAYS:
-            start_component(c)
+            start_component(c, enable_logging=enable_logging)
     else:
         for t in targets:
             if t in COMPONENTS:
-                start_component(t)
+                start_component(t, enable_logging=enable_logging)
             else:
                 print(f"{RED}Unknown component:{RESET} {t}")
 
@@ -300,10 +348,10 @@ def cmd_stop(targets):
             else:
                 print(f"{RED}Unknown component:{RESET} {t}")
 
-def cmd_restart(targets):
+def cmd_restart(targets, enable_logging=False):
     cmd_stop(targets)
     time.sleep(0.5)
-    cmd_start(targets)
+    cmd_start(targets, enable_logging=enable_logging)
 
 def cmd_status():
     print(f"\n{BOLD}{'COMPONENT':<14} {'TYPE':<16} {'STATUS':<12} {'PID':<8} {'DESCRIPTION'}{RESET}")
@@ -509,6 +557,8 @@ HELP_TEXT = f"""{BOLD}NAME{RESET}
     {CYAN}--query{RESET}                Query live KDB+ tick counts, cross-exchange prices & Greeks
     {CYAN}--benchmark{RESET}            Display cycle-accurate hardware latency benchmarks (TSC/rdtsc)
     {CYAN}--monitor{RESET}              Continuously stream real-time cross-venue arbitrage matrix
+    {CYAN}--trim-logs{RESET}            Truncate all log files to last 1,000 lines in-place (FIFO)
+    {CYAN}--log{RESET}                  Enable rate-limited engine hot-path logging & trimmer (debug mode)
     {CYAN}-h, --help{RESET}             Display this help manual and exit
 
 {BOLD}COMPONENTS{RESET}
@@ -548,6 +598,18 @@ def cmd_benchmark():
     else:
         print(f"{YELLOW}Engine is collecting cycles... run `./start.sh --start engine` and check again.{RESET}")
 
+def cmd_trim_logs(max_lines=1000):
+    """Manually trims all log files to max_lines in-place (FIFO)."""
+    print(f"{CYAN}Trimming all log files to last {max_lines} lines (FIFO)...{RESET}")
+    trim_all_logs(max_lines=max_lines)
+    for p in sorted(LOGS_DIR.glob("*.log")):
+        try:
+            cnt = sum(1 for _ in open(p, "rb"))
+            print(f"  • {p.name:<18} : {cnt:,} lines")
+        except Exception:
+            pass
+    print(f"{GREEN}✔ All log files successfully bounded to {max_lines} lines.{RESET}\n")
+
 def cmd_monitor():
     """Continuously monitors cross-venue arbitrage matrix and streams updates in real time."""
     print(f"{CYAN}Starting real-time live arbitrage monitor. Press Ctrl+C to stop...{RESET}")
@@ -577,6 +639,12 @@ def cmd_select(extra_args=None):
 
 def main():
     args = sys.argv[1:]
+
+    enable_logging = False
+    if "--log" in args or "-l" in args or "--verbose" in args:
+        enable_logging = True
+        args = [a for a in args if a not in ("--log", "-l", "--verbose")]
+        start_log_trimmer_thread(interval=3.0, max_lines=1000)
 
     # Default action: no arguments launches Bloomberg TUI directly
     if not args:
@@ -609,19 +677,21 @@ def main():
         cmd_status()
     elif first in ("--start", "start"):
         targets = target_from_equals or (args[1:] if len(args) > 1 else ["all"])
-        cmd_start(targets)
+        cmd_start(targets, enable_logging=enable_logging)
     elif first in ("--stop", "stop"):
         targets = target_from_equals or (args[1:] if len(args) > 1 else ["all"])
         cmd_stop(targets)
     elif first in ("--restart", "restart"):
         targets = target_from_equals or (args[1:] if len(args) > 1 else ["all"])
-        cmd_restart(targets)
+        cmd_restart(targets, enable_logging=enable_logging)
     elif first in ("--query", "query"):
         cmd_query()
     elif first in ("--benchmark", "benchmark"):
         cmd_benchmark()
     elif first in ("--monitor", "monitor"):
         cmd_monitor()
+    elif first in ("--trim-logs", "trim-logs"):
+        cmd_trim_logs()
     else:
         sys.stderr.write(f"./start.sh: unrecognized option '{first}'\nRun './start.sh --help' for available options.\n")
         sys.exit(1)

@@ -110,8 +110,14 @@ int main(int argc, char* argv[]) {
 
     // Pin execution loop to dedicated CPU Core 2
     int target_core = 2;
-    if (argc > 1) {
-        target_core = std::atoi(argv[1]);
+    bool enable_logging = false;
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--log" || arg == "-l" || arg == "--verbose") {
+            enable_logging = true;
+        } else if (!arg.empty() && std::isdigit(static_cast<unsigned char>(arg[0]))) {
+            target_core = std::atoi(argv[i]);
+        }
     }
     pin_to_core(target_core);
 
@@ -222,20 +228,27 @@ int main(int argc, char* argv[]) {
         // Action on genuine arbitrage signal
         if (__builtin_expect(sig.has_value(), 0)) {
             total_arb_opportunities++;
-            double lat_ns = BenchmarkTimer::cycles_to_ns(
-                ingress_cycles + parse_cycles + book_cycles + arb_cycles, 
-                BenchmarkTimer::frequency()
-            );
+            if (__builtin_expect(enable_logging, 0)) {
+                static auto last_print = std::chrono::steady_clock::now();
+                auto now = std::chrono::steady_clock::now();
+                if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_print).count() >= 500) {
+                    last_print = now;
+                    double lat_ns = BenchmarkTimer::cycles_to_ns(
+                        ingress_cycles + parse_cycles + book_cycles + arb_cycles, 
+                        BenchmarkTimer::frequency()
+                    );
 
-            std::cout << "\033[92m\033[1m[ARBITRAGE OPPORTUNITY FOUND]\033[0m Strategy: " 
-                      << strategy_type_to_string(sig->strategy) << "\n"
-                      << "  • Buy  Venue: " << venue_to_string(sig->buy_venue) << " @ $" 
-                      << std::fixed << std::setprecision(2) << sig->buy_price << "\n"
-                      << "  • Sell Venue: " << venue_to_string(sig->sell_venue) << " @ $" 
-                      << sig->sell_price << "\n"
-                      << "  • Spread:     $" << sig->gross_spread << " (Net Est: $" << sig->net_profit_est << ")\n"
-                      << "  • Exec Qty:   " << sig->executable_qty << "\n"
-                      << "  • Latency:    " << std::fixed << std::setprecision(1) << lat_ns << " ns (Cycle to Decision)\n\n";
+                    std::cout << "\033[92m\033[1m[ARBITRAGE OPPORTUNITY FOUND]\033[0m Strategy: " 
+                              << strategy_type_to_string(sig->strategy) << "\n"
+                              << "  • Buy  Venue: " << venue_to_string(sig->buy_venue) << " @ $" 
+                              << std::fixed << std::setprecision(2) << sig->buy_price << "\n"
+                              << "  • Sell Venue: " << venue_to_string(sig->sell_venue) << " @ $" 
+                              << sig->sell_price << "\n"
+                              << "  • Spread:     $" << sig->gross_spread << " (Net Est: $" << sig->net_profit_est << ")\n"
+                              << "  • Exec Qty:   " << sig->executable_qty << "\n"
+                              << "  • Latency:    " << std::fixed << std::setprecision(1) << lat_ns << " ns (Cycle to Decision)\n\n";
+                }
+            }
         }
     };
 

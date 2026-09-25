@@ -132,9 +132,13 @@ def fetch_equity_catalog():
                 spot = float(data.get('current_price', 0.0))
                 options = data.get('options', [])
 
-                # Filter Calls and find nearest expiry that has at least 5 contracts
+                # Filter Calls and find nearest unexpired expiry that has at least 5 contracts
                 L = len(sym)
-                expiries = sorted(list(set([o['option'][L:L+6] for o in options if len(o.get('option', '')) >= L+7])))
+                today_str = datetime.now().strftime("%y%m%d")
+                expiries = sorted(list(set([
+                    o['option'][L:L+6] for o in options 
+                    if len(o.get('option', '')) >= L+7 and o['option'][L:L+6] >= today_str
+                ])))
                 target_exp = ""
                 exp_calls = []
                 for exp in expiries:
