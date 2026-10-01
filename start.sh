@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Ultra-Low-Latency Arbitrage Infrastructure & Trading Terminal Launcher
-# Runs directly as standard user (no sudo required).
+# Requires sudo or CAP_NET_ADMIN / CAP_BPF capabilities for eBPF XDP hook attachment and AF_XDP sockets.
 
 # Ensure python environment, site-packages, and binaries (q, kdb) are accessible
 TARGET_HOME="$HOME"
