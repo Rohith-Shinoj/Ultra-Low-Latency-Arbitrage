@@ -10,17 +10,17 @@
     "sym": "BTC_C86000"
   },
   "equity": {
-    "cboe_option": "SPY260925C00769000",
+    "cboe_option": "SPY260925C00767000",
     "underlying": "SPY",
     "expiry": "260925",
-    "strike": 769.0,
+    "strike": 767.0,
     "call_put": "C",
-    "nasdaq_strike": "769.00",
+    "nasdaq_strike": "767.00",
     "nasdaq_expiry": "Sep 25",
-    "sym": "SPY_C769",
-    "bid": 1.11,
-    "ask": 1.12,
-    "iv": 0.1272,
-    "theo": 1.1238
+    "sym": "SPY_C767",
+    "bid": 1.97,
+    "ask": 1.99,
+    "iv": 0.1307,
+    "theo": 1.9972
   }
 }

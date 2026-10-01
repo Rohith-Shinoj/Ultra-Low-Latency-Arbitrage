@@ -58,7 +58,7 @@ public:
     int poll_rx(const std::function<void(const RawPacketDesc&)>& cb, int max_batch = 64);
 
     bool is_running() const { return running_; }
-    void stop() { running_ = false; }
+    void stop();
     const std::string& get_mode() const { return active_mode_; }
     const ull::SolarflareScanResult& get_solarflare_scan() const { return solarflare_scan_; }
     bool is_solarflare_active() const { return solarflare_scan_.is_accelerated(); }

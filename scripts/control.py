@@ -30,7 +30,10 @@ for _uh in _candidate_homes:
     if os.path.isdir(_uh):
         for p in glob.glob(f"{_uh}/.local/lib/python*/site-packages"):
             if p not in sys.path:
-                sys.path.insert(0, p)
+                sys.path.append(p)
+            cur_pp = os.environ.get("PYTHONPATH", "")
+            if p not in cur_pp:
+                os.environ["PYTHONPATH"] = f"{cur_pp}:{p}" if cur_pp else p
         _kx_dir = Path(_uh) / ".kx"
         if _kx_dir.is_dir() and ((_kx_dir / "kc.lic").exists() or (_kx_dir / "k4.lic").exists()):
             os.environ["QLIC"] = str(_kx_dir)
@@ -100,7 +103,7 @@ COMPONENTS = {
     },
     "engine": {
         "desc": "C++20 ULL Arbitrage Engine (AF_XDP Core)",
-        "cmd": ["engine/bin/engine_main", "2"],
+        "cmd": ["sudo", "-n", str(ROOT_DIR / "engine" / "bin" / "engine_main"), "0"],
         "type": "C++ Engine",
         "match": "engine/bin/engine_main",
     },
@@ -205,6 +208,8 @@ def get_status(name):
             pid = int(pid_file.read_text().strip())
             os.kill(pid, 0)
             return True, pid
+        except PermissionError:
+            return True, pid
         except (ValueError, OSError):
             pid_file.unlink(missing_ok=True)
     return False, None
@@ -253,13 +258,19 @@ def start_component(name, enable_logging=False):
             close_fds=True,
             start_new_session=True,
         )
-        time.sleep(0.3)
+        time.sleep(0.5)
         if proc.poll() is not None:
             print(f"  {RED}✖{RESET} {name:<12} failed to start (exit code {proc.returncode}). Check {log_path}")
             return False
 
-        get_pid_file(name).write_text(str(proc.pid))
-        print(f"  {GREEN}✔{RESET} {name:<12} started (PID {proc.pid}) -> {log_path.name}")
+        actual_pid = proc.pid
+        if name == "engine":
+            eng_pids = find_pids_by_match(cfg["match"])
+            if eng_pids:
+                actual_pid = eng_pids[0]
+
+        get_pid_file(name).write_text(str(actual_pid))
+        print(f"  {GREEN}✔{RESET} {name:<12} started (PID {actual_pid}) -> {log_path.name}")
         return True
     except Exception as e:
         print(f"  {RED}✖{RESET} {name:<12} error: {e}")
@@ -301,10 +312,20 @@ def stop_component(name):
                 time.sleep(0.1)
                 try:
                     os.kill(p, 0)
+                except PermissionError:
+                    # Still alive but owned by root; try sudo kill
+                    subprocess.run(["sudo", "-n", "kill", "-TERM", str(p)], check=False)
                 except OSError:
                     break
             else:
-                os.kill(p, signal.SIGKILL)
+                try:
+                    os.kill(p, signal.SIGKILL)
+                except PermissionError:
+                    subprocess.run(["sudo", "-n", "kill", "-9", str(p)], check=False)
+        except PermissionError:
+            subprocess.run(["sudo", "-n", "kill", "-TERM", str(p)], check=False)
+            time.sleep(0.3)
+            subprocess.run(["sudo", "-n", "kill", "-9", str(p)], check=False)
         except OSError:
             pass
 

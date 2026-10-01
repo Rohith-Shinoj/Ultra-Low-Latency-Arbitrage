@@ -16,7 +16,7 @@ CXXFLAGS = -std=c++20 -O3 $(ARCH_CXXFLAGS) -Wall -Wextra -pthread -Iinclude -I/u
 LDFLAGS = -lxdp -lbpf -lpthread -ldl
 
 CLANG = clang
-BPF_CFLAGS = -O2 -target bpf $(ARCH_BPF_INC) -I/usr/include
+BPF_CFLAGS = -O2 -g -target bpf $(ARCH_BPF_INC) -I/usr/include
 
 
 BIN_DIR = bin

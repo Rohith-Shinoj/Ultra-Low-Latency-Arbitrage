@@ -8,7 +8,7 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from protocol import SBE_BOOK_UPDATE_FMT, MCAST_IP, PORT_OKX_OPT
+from protocol import SBE_BOOK_UPDATE_FMT, MCAST_IP, PORT_OKX_OPT, broadcast_market_update
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
 
@@ -84,7 +84,7 @@ async def run_okx():
                     bid_px = int(bid_usd * 10000)
                     bid_sz = int(float(active_tick['bidSz']) * 100) if 'bidSz' in active_tick else 0
                     payload_bid = struct.pack(SBE_BOOK_UPDATE_FMT, 32, 32, 1, 1, ts, 1, 1, 0, b'0', 1002, seq, bid_px, bid_sz)
-                    sock.sendto(payload_bid, (MCAST_IP, PORT_OKX_OPT))
+                    broadcast_market_update(sock, payload_bid, PORT_OKX_OPT)
                     seq += 1
 
                 if ask_btc > 0:
@@ -92,7 +92,7 @@ async def run_okx():
                     ask_px = int(ask_usd * 10000)
                     ask_sz = int(float(active_tick['askSz']) * 100) if 'askSz' in active_tick else 0
                     payload_ask = struct.pack(SBE_BOOK_UPDATE_FMT, 32, 32, 1, 1, ts, 1, 1, 0, b'1', 1002, seq, ask_px, ask_sz)
-                    sock.sendto(payload_ask, (MCAST_IP, PORT_OKX_OPT))
+                    broadcast_market_update(sock, payload_ask, PORT_OKX_OPT)
                     seq += 1
 
             await asyncio.sleep(1.0)

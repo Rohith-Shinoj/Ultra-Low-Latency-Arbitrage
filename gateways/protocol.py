@@ -39,3 +39,15 @@ PORT_OPRA_OPT = 5002
 PORT_DERIBIT_OPT = 5003
 PORT_OKX_OPT = 5004
 PORT_BINANCE_OPT = 5005
+
+# Dual-plane ingress offset:
+# Ports 5000-5005: Intercepted by eBPF filter & kernel-bypassed to C++ Engine via AF_XDP
+# Ports 5010-5015: Passed by eBPF filter to Linux kernel stack for KDB+ / Bloomberg TUI
+PORT_KDB_OFFSET = 10
+
+def broadcast_market_update(sock, payload, port):
+    # Primary ULL engine path (Kernel Bypass via AF_XDP)
+    sock.sendto(payload, (MCAST_IP, port))
+    # Auxiliary KDB+ tickerplant path (Linux networking stack)
+    sock.sendto(payload, (MCAST_IP, port + PORT_KDB_OFFSET))
+

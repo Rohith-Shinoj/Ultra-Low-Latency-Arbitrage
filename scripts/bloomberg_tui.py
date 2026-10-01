@@ -425,8 +425,23 @@ class TickHistory:
 
 history = TickHistory(maxlen=40)
 
+_kdb_client = None
+
+def _get_or_create_kdb_client():
+    global _kdb_client
+    if _kdb_client is not None:
+        return _kdb_client
+    try:
+        q = qconnection.QConnection(host='localhost', port=5020, timeout=0.8)
+        q.open()
+        _kdb_client = q
+        return _kdb_client
+    except Exception:
+        return None
+
 def fetch_live_quotes(cfg: dict = None):
     """Queries KDB+ directly for dynamically partitioned crypto and equity quotes and recent ticks."""
+    global _kdb_client
     quotes = {
         'btc': {'bids': {}, 'asks': {}, 'b_sz': {}, 'a_sz': {}},
         'spy': {'bids': {}, 'asks': {}, 'b_sz': {}, 'a_sz': {}},
@@ -437,9 +452,14 @@ def fetch_live_quotes(cfg: dict = None):
     equity_u = (cfg.get('equity', {}).get('underlying', 'SPY') if cfg else 'SPY')
 
     try:
-        q = qconnection.QConnection(host='localhost', port=5020, timeout=1.0)
-        q.open()
-        quotes['total_ticks'] = int(q('count OptBook'))
+        q = _get_or_create_kdb_client()
+        if q is None:
+            return quotes
+
+        try:
+            quotes['total_ticks'] = int(q('tot_ticks'))
+        except Exception:
+            quotes['total_ticks'] = int(q('count OptBook'))
 
         if quotes['total_ticks'] > 0:
             bids_btc = q(f'select last price, last size by exch from OptBook where side="B", sym like "{crypto_u}*"')
@@ -479,10 +499,13 @@ def fetch_live_quotes(cfg: dict = None):
                 quotes['recent_ticks'] = recent
             except Exception:
                 pass
-
-        q.close()
     except Exception:
-        pass
+        if _kdb_client is not None:
+            try:
+                _kdb_client.close()
+            except Exception:
+                pass
+            _kdb_client = None
 
     history.record_tick(quotes)
     return quotes
@@ -740,6 +763,38 @@ def render_selection_footer(active_side: str) -> Panel:
     grid.add_row(left, right)
     return Panel(grid, style="on black", border_style="#5c5040")
 
+_last_ingress_mode = "AF_XDP (Kernel Bypass)"
+_last_ingress_mode_check = 0.0
+
+def get_active_ingress_mode() -> str:
+    global _last_ingress_mode, _last_ingress_mode_check
+    now = time.time()
+    if now - _last_ingress_mode_check < 3.0:
+        return _last_ingress_mode
+    _last_ingress_mode_check = now
+
+    log_file = Path(__file__).resolve().parent.parent / "logs" / "engine.log"
+    if log_file.is_file():
+        try:
+            sz = log_file.stat().st_size
+            with open(log_file, "rb") as f:
+                if sz > 8192:
+                    f.seek(sz - 8192)
+                chunk = f.read().decode("utf-8", errors="replace")
+                lines = chunk.splitlines()
+                for line in reversed(lines[-80:]):
+                    if "in mode:" in line:
+                        parts = line.split("in mode:")
+                        if len(parts) > 1:
+                            _last_ingress_mode = parts[1].strip()
+                            return _last_ingress_mode
+                    elif "Activating Zero-Copy Socket Ingress Ring" in line:
+                        _last_ingress_mode = "Socket Arena (Fallback)"
+                        return _last_ingress_mode
+        except Exception:
+            pass
+    return _last_ingress_mode
+
 def render_header(total_ticks: int) -> Panel:
     now_str = time.strftime("%Y-%m-%d %H:%M:%S UTC")
     grid = Table.grid(expand=True)
@@ -748,8 +803,10 @@ def render_header(total_ticks: int) -> Panel:
     grid.add_column(justify="right", ratio=1)
 
     title = Text("CROSS-VENUE ARBITRAGE MONITOR", style="bold #e5a93b")
+    mode_str = get_active_ingress_mode()
+    mode_style = "bold #4ade80" if "AF_XDP" in mode_str or "Solarflare" in mode_str else "bold #f59e0b"
     mid_info = Text.assemble(
-        ("INGRESS: ", "#64748b"), ("AF_XDP (Kernel Bypass)  ", "bold #4ade80"),
+        ("INGRESS: ", "#64748b"), (f"{mode_str}  ", mode_style),
         ("CPU: ", "#64748b"), ("Core 2 (Pinned)  ", "#38bdf8"),
         ("FEED: ", "#64748b"), ("UDP Multicast (5000-5005)", "#94a3b8"),
     )

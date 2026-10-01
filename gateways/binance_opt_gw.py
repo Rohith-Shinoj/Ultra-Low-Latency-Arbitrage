@@ -8,7 +8,7 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from protocol import SBE_BOOK_UPDATE_FMT, MCAST_IP, PORT_BINANCE_OPT
+from protocol import SBE_BOOK_UPDATE_FMT, MCAST_IP, PORT_BINANCE_OPT, broadcast_market_update
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
 
@@ -67,13 +67,13 @@ async def run_binance():
                 if bid > 0:
                     px = int(bid * 10000)
                     payload_bid = struct.pack(SBE_BOOK_UPDATE_FMT, 32, 32, 1, 1, ts, 1, 1, 0, b'0', 1003, seq, px, bid_sz)
-                    sock.sendto(payload_bid, (MCAST_IP, PORT_BINANCE_OPT))
+                    broadcast_market_update(sock, payload_bid, PORT_BINANCE_OPT)
                     seq += 1
 
                 if ask > 0:
                     px = int(ask * 10000)
                     payload_ask = struct.pack(SBE_BOOK_UPDATE_FMT, 32, 32, 1, 1, ts, 1, 1, 0, b'1', 1003, seq, px, bid_sz)
-                    sock.sendto(payload_ask, (MCAST_IP, PORT_BINANCE_OPT))
+                    broadcast_market_update(sock, payload_ask, PORT_BINANCE_OPT)
                     seq += 1
 
             await asyncio.sleep(1.0)

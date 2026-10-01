@@ -26,6 +26,10 @@ void sigint_handler(int) {
 
 // Pins the calling thread to a specific dedicated CPU core for deterministic low latency
 static bool pin_to_core(int core_id) {
+    long ncpus = sysconf(_SC_NPROCESSORS_ONLN);
+    if (ncpus > 0 && core_id >= ncpus) {
+        core_id = 0; // Fallback to primary core on single-core / low-core environments
+    }
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
     CPU_SET(core_id, &cpuset);
@@ -123,7 +127,7 @@ int main(int argc, char* argv[]) {
 
     // Initialize Network Stack (AF_XDP Ingress Core)
     AFXDPSocket::Config net_cfg;
-    net_cfg.ifname = "veth1";
+    net_cfg.ifname = "lo";
     net_cfg.queue_id = 0;
     net_cfg.num_frames = 4096;
     net_cfg.frame_size = 2048;

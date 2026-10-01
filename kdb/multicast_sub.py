@@ -1,3 +1,18 @@
+import sys
+import os
+import glob
+from pathlib import Path
+
+# Add user site-packages for root execution
+for _uh in ["/home/ubuntu", str(Path.home())]:
+    if os.path.isdir(_uh):
+        for p in glob.glob(f"{_uh}/.local/lib/python*/site-packages"):
+            if p not in sys.path:
+                sys.path.append(p)
+
+# Ensure local gateways directory takes precedence over site-packages
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'gateways'))
+
 import time
 import socket
 import struct
@@ -7,20 +22,16 @@ import numpy as np
 if not hasattr(np, 'string_'):
     np.string_ = np.bytes_
 from qpython import qconnection
-import sys
-import os
-
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'gateways'))
 from protocol import ITCH_ADD_ORDER_FMT, SBE_BOOK_UPDATE_FMT
 
 MCAST_IP = '239.1.1.1'
 PORTS = {
-    5000: b'CBOE_OPT',
-    5001: b'NASDAQ_OPT',
-    5002: b'OPRA_OPT',
-    5003: b'DERIBIT_OPT',
-    5004: b'OKX_OPT',
-    5005: b'BINANCE_OPT'
+    5010: b'CBOE_OPT',
+    5011: b'NASDAQ_OPT',
+    5012: b'OPRA_OPT',
+    5013: b'DERIBIT_OPT',
+    5014: b'OKX_OPT',
+    5015: b'BINANCE_OPT'
 }
 
 ACTIVE_CFG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'gateways', 'active_contracts.json')
@@ -107,7 +118,7 @@ def main():
         return
 
     sockets = {create_mcast_socket(port): port for port in PORTS.keys()}
-    print("Listening to UDP Multicast on ports 5000-5005...")
+    print("Listening to UDP Multicast on ports 5010-5015...")
 
     ITCH_SIZE = struct.calcsize(ITCH_ADD_ORDER_FMT)
     SBE_SIZE = struct.calcsize(SBE_BOOK_UPDATE_FMT)
@@ -120,7 +131,7 @@ def main():
                 port = sockets[sock]
                 exch = PORTS[port]
 
-                if port <= 5002: # Equity Options (ITCH)
+                if port <= 5012: # Equity Options (ITCH)
                     if len(data) == ITCH_SIZE:
                         msg_type, loc, track, ts, ref, side, qty, sym, px = struct.unpack(ITCH_ADD_ORDER_FMT, data)
                         sym_str = sym.decode('utf-8').strip('\x00')

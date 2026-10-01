@@ -8,7 +8,7 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from protocol import ITCH_ADD_ORDER_FMT, MCAST_IP, PORT_CBOE_OPT
+from protocol import ITCH_ADD_ORDER_FMT, MCAST_IP, PORT_CBOE_OPT, broadcast_market_update
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
 
@@ -142,13 +142,13 @@ async def run_cboe():
                     if bid > 0:
                         px = int(bid * 10000)
                         payload_bid = struct.pack(ITCH_ADD_ORDER_FMT, b'A', 1, 0, ts, seq, b'B', bid_sz, sym_padded, px)
-                        sock.sendto(payload_bid, (MCAST_IP, PORT_CBOE_OPT))
+                        broadcast_market_update(sock, payload_bid, PORT_CBOE_OPT)
                         seq += 1
 
                     if ask > 0:
                         px = int(ask * 10000)
                         payload_ask = struct.pack(ITCH_ADD_ORDER_FMT, b'A', 1, 0, ts, seq, b'S', ask_sz, sym_padded, px)
-                        sock.sendto(payload_ask, (MCAST_IP, PORT_CBOE_OPT))
+                        broadcast_market_update(sock, payload_ask, PORT_CBOE_OPT)
                         seq += 1
                 except Exception as e:
                     print(f"CBOE send notice: {e}")

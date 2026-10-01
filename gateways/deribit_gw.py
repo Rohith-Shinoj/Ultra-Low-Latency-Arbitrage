@@ -8,7 +8,7 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from protocol import SBE_BOOK_UPDATE_FMT, MCAST_IP, PORT_DERIBIT_OPT
+from protocol import SBE_BOOK_UPDATE_FMT, MCAST_IP, PORT_DERIBIT_OPT, broadcast_market_update
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
 
@@ -117,7 +117,7 @@ async def run_ws():
                         bid_px = int(bid_usd * 10000)
                         bid_qty = int(float(tick.get('best_bid_amount', 0)) * 100)
                         payload_bid = struct.pack(SBE_BOOK_UPDATE_FMT, 32, 32, 1, 1, ts, 1, 1, 0, b'0', 1001, seq, bid_px, bid_qty)
-                        sock.sendto(payload_bid, (MCAST_IP, PORT_DERIBIT_OPT))
+                        broadcast_market_update(sock, payload_bid, PORT_DERIBIT_OPT)
                         seq += 1
 
                     a_px_val = tick.get('best_ask_price')
@@ -127,7 +127,7 @@ async def run_ws():
                         ask_px = int(ask_usd * 10000)
                         ask_qty = int(float(tick.get('best_ask_amount', 0)) * 100)
                         payload_ask = struct.pack(SBE_BOOK_UPDATE_FMT, 32, 32, 1, 1, ts, 1, 1, 0, b'1', 1001, seq, ask_px, ask_qty)
-                        sock.sendto(payload_ask, (MCAST_IP, PORT_DERIBIT_OPT))
+                        broadcast_market_update(sock, payload_ask, PORT_DERIBIT_OPT)
                         seq += 1
 
                     # Update parity metrics from Call side as well
